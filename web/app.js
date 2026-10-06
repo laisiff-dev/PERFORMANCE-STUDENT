@@ -155,6 +155,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const btnMergeAllDiff = document.getElementById('btn-merge-all-diff');
         if (btnMergeAllDiff) btnMergeAllDiff.addEventListener('click', handleMergeAllDiff);
 
+        // 圖表學年度下拉選單事件
+        const chartYearFilter = document.getElementById('chart-year-filter');
+        if (chartYearFilter) {
+            chartYearFilter.addEventListener('change', renderCharts);
+        }
+
         // 5 大頁籤視角切換器
         document.querySelectorAll('.view-tab').forEach(tabBtn => {
             tabBtn.addEventListener('click', (e) => {
@@ -169,8 +175,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     openUnappliedModal();
                 } else if (tabKey === 'crawled-meetings') {
                     filterStatus.value = '';
-                    searchInput.value = '會議';
-                    applyFilters();
+                    filterYear.value = '';
+                    searchInput.value = '';
+                    // 篩選所有資料來源包含會議或官網之紀錄
+                    filteredRecords = allRecords.filter(r => {
+                        const src = String(r["資料來源"] || '');
+                        return src.includes('會議') || src.includes('官網') || src.includes('網站') || src.includes('行政') || src.includes('校務');
+                    });
+                    currentPage = 1;
+                    renderDashboard();
                 } else if (tabKey === 'template-112-114') {
                     searchInput.value = '';
                     filterStatus.value = '';
@@ -204,7 +217,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (st && r["發放與領獎狀態"] !== st) return false;
             if (kw) {
                 const match = Object.values(r).some(val => 
-                    String(val).toLowerCase().includes(kw)
+                    String(val || '').toLowerCase().includes(kw)
                 );
                 if (!match) return false;
             }
@@ -248,12 +261,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderCharts() {
+        const chartYearFilter = document.getElementById('chart-year-filter');
+        const selectedYear = chartYearFilter ? chartYearFilter.value : '';
+
+        const recordsToChart = selectedYear ? 
+            allRecords.filter(r => r["學年度"] === selectedYear) : 
+            filteredRecords;
+
         // 各學院數據
         const colMap = {};
         const lvlMap = {};
         const statusMap = { "待通知": 0, "通知已發送": 0, "已線上簽領": 0, "已完成撥款": 0 };
 
-        filteredRecords.forEach(r => {
+        recordsToChart.forEach(r => {
             const col = r["所屬學院"] || "其他";
             colMap[col] = (colMap[col] || 0) + 1;
 

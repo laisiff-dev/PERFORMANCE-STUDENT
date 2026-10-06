@@ -72,7 +72,7 @@
                 <div class="kpi-info">
                     <span class="kpi-label">全校獲獎總數</span>
                     <h2 class="kpi-value" id="kpi-total-count">0</h2>
-                    <span class="kpi-sub">跨 113~115 學年度</span>
+                    <span class="kpi-sub">跨 112~115 學年度</span>
                 </div>
             </div>
             <div class="kpi-card glass">
@@ -117,30 +117,47 @@
             </div>
         </section>
 
-        <!-- 視覺化統計數據圖表區 -->
-        <section class="charts-section">
-            <div class="chart-card glass">
-                <div class="chart-header">
-                    <h3><i class="fa-solid fa-chart-column"></i> 各學院獲獎總數橫向對比 (IR Analytics)</h3>
-                </div>
-                <div class="chart-body">
-                    <canvas id="collegeChart"></canvas>
+        <!-- 視覺化統計數據圖表區 (含學年度下拉選單) -->
+        <section class="glass" style="padding: 16px 20px; margin-bottom: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px;">
+                <h3 style="font-size: 17px; font-weight: 700; color: var(--primary-color); margin: 0;">
+                    <i class="fa-solid fa-chart-line"></i> 視覺化數據統計與分析圖表 (IR Analytics)
+                </h3>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <label style="font-size: 13px; font-weight: 600; color: #475569;"><i class="fa-solid fa-calendar"></i> 圖表學年度篩選：</label>
+                    <select id="chart-year-filter" style="padding: 6px 12px; font-size: 13px; border-radius: 8px; border: 1px solid #CBD5E1; background: #FFF; font-weight: 600;">
+                        <option value="">全部學年度 (112~115)</option>
+                        <option value="112學年度">112學年度</option>
+                        <option value="113學年度">113學年度</option>
+                        <option value="114學年度">114學年度</option>
+                        <option value="115學年度">115學年度</option>
+                    </select>
                 </div>
             </div>
-            <div class="chart-card glass">
-                <div class="chart-header">
-                    <h3><i class="fa-solid fa-chart-pie"></i> 競賽層級比例分佈</h3>
+            <div class="charts-section">
+                <div class="chart-card glass">
+                    <div class="chart-header">
+                        <h3><i class="fa-solid fa-chart-column"></i> 各學院獲獎總數對比</h3>
+                    </div>
+                    <div class="chart-body">
+                        <canvas id="collegeChart"></canvas>
+                    </div>
                 </div>
-                <div class="chart-body">
-                    <canvas id="levelChart"></canvas>
+                <div class="chart-card glass">
+                    <div class="chart-header">
+                        <h3><i class="fa-solid fa-chart-pie"></i> 競賽層級比例分佈</h3>
+                    </div>
+                    <div class="chart-body">
+                        <canvas id="levelChart"></canvas>
+                    </div>
                 </div>
-            </div>
-            <div class="chart-card glass">
-                <div class="chart-header">
-                    <h3><i class="fa-solid fa-tasks"></i> 學生領獎與獎助金發放進度</h3>
-                </div>
-                <div class="chart-body">
-                    <canvas id="statusChart"></canvas>
+                <div class="chart-card glass">
+                    <div class="chart-header">
+                        <h3><i class="fa-solid fa-tasks"></i> 學生領獎與獎助金進度</h3>
+                    </div>
+                    <div class="chart-body">
+                        <canvas id="statusChart"></canvas>
+                    </div>
                 </div>
             </div>
         </section>
@@ -176,8 +193,13 @@
                 <div class="filter-group">
                     <label><i class="fa-solid fa-calendar"></i> 學年度</label>
                     <select id="filter-year">
-                        <option value="">全部學年度</option>
+                        <option value="">全部學年度 (112~115)</option>
+                        <option value="112學年度">112學年度</option>
                         <option value="113學年度">113學年度</option>
+                        <option value="114學年度">114學年度</option>
+                        <option value="115學年度">115學年度</option>
+                    </select>
+                </div>
                         <option value="114學年度">114學年度</option>
                         <option value="115學年度">115學年度</option>
                     </select>
