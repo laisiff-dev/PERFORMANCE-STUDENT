@@ -1,6 +1,6 @@
 // 輔英科技大學 學生國內外獲獎紀錄管理與領獎通知系統 前端主邏輯
 
-document.addEventListener('DOMContentLoaded', () => {
+function initFooyinAwardsApp() {
     let allRecords = (window.INITIAL_AWARDS_DATA && window.INITIAL_AWARDS_DATA.length > 0) ? [...window.INITIAL_AWARDS_DATA] : [];
     let filteredRecords = [...allRecords];
     let currentPage = 1;
@@ -38,7 +38,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function initSystem() {
         setupEventListeners();
         await fetchAwardsData();
-        renderDashboard();
+        applyFilters();
     }
 
     async function fetchAwardsData() {
@@ -1178,5 +1178,12 @@ document.addEventListener('DOMContentLoaded', () => {
             alert(`已成功批量派發 ${unappliedStudentsList.length} 封未申請獎補助同學催辦提醒信！`);
         }
     }
-});
+}
+
+// 確保腳本載入時無論 DOM 是否已完成加載，均能立即安定發動系統初始化
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initFooyinAwardsApp);
+} else {
+    initFooyinAwardsApp();
+}
 
