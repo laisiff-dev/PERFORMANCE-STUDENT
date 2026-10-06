@@ -1,8 +1,8 @@
 // 輔英科技大學 學生國內外獲獎紀錄管理與領獎通知系統 前端主邏輯
 
 document.addEventListener('DOMContentLoaded', () => {
-    let allRecords = [];
-    let filteredRecords = [];
+    let allRecords = (window.INITIAL_AWARDS_DATA && window.INITIAL_AWARDS_DATA.length > 0) ? [...window.INITIAL_AWARDS_DATA] : [];
+    let filteredRecords = [...allRecords];
     let currentPage = 1;
     const itemsPerPage = 12;
 
@@ -23,6 +23,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const paginationInfo = document.getElementById('pagination-info');
     const paginationControls = document.getElementById('pagination-controls');
 
+    // 學年度正規化比對函式 (支援 "112學年度" 與 "112" 之雙向彈性比對)
+    function matchYear(recordYear, targetYear) {
+        if (!targetYear) return true;
+        if (!recordYear) return false;
+        const rY = String(recordYear).replace(/學年度/g, '').trim();
+        const tY = String(targetYear).replace(/學年度/g, '').trim();
+        return rY === tY;
+    }
+
     // 初始化系統
     initSystem();
 
@@ -36,9 +45,12 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const resp = await fetch('/api/awards');
             if (resp.ok) {
-                allRecords = await resp.json();
-                filteredRecords = [...allRecords];
-                return;
+                const data = await resp.json();
+                if (Array.isArray(data) && data.length > 0) {
+                    allRecords = data;
+                    filteredRecords = [...allRecords];
+                    return;
+                }
             }
         } catch (e) {
             console.warn("無法連線至 API 伺服器，啟動內建載入機制...", e);
@@ -46,9 +58,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // 降級讀取本機封裝資料
         if (window.INITIAL_AWARDS_DATA && window.INITIAL_AWARDS_DATA.length > 0) {
-            allRecords = window.INITIAL_AWARDS_DATA;
-        } else {
-            allRecords = [];
+            allRecords = [...window.INITIAL_AWARDS_DATA];
         }
         filteredRecords = [...allRecords];
     }
@@ -173,24 +183,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     openDiffModal();
                 } else if (tabKey === 'unapplied-reminders') {
                     openUnappliedModal();
-                } else if (tabKey === 'crawled-meetings') {
-                    filterStatus.value = '';
-                    filterYear.value = '';
-                    searchInput.value = '';
-                    // 篩選所有資料來源包含會議或官網之紀錄
-                    filteredRecords = allRecords.filter(r => {
-                        const src = String(r["資料來源"] || '');
-                        return src.includes('會議') || src.includes('官網') || src.includes('網站') || src.includes('行政') || src.includes('校務');
-                    });
-                    currentPage = 1;
-                    renderDashboard();
-                } else if (tabKey === 'template-112-114') {
-                    searchInput.value = '';
-                    filterStatus.value = '';
-                    applyFilters();
                 } else {
-                    searchInput.value = '';
-                    filterStatus.value = '';
                     applyFilters();
                 }
             });
@@ -209,12 +202,37 @@ document.addEventListener('DOMContentLoaded', () => {
         const lvl = filterLevel.value;
         const st = filterStatus.value;
 
+        // 讀取當前作用中視角頁籤 (View Tab)
+        const activeTabBtn = document.querySelector('.view-tab.active');
+        const activeTabKey = activeTabBtn ? activeTabBtn.dataset.tab : 'all-awards';
+
         filteredRecords = allRecords.filter(r => {
-            if (yr && r["學年度"] !== yr) return false;
-            if (col && r["所屬學院"] !== col) return false;
-            if (dept && r["系所名稱"] !== dept) return false;
-            if (lvl && r["競賽層級"] !== lvl) return false;
-            if (st && r["發放與領獎狀態"] !== st) return false;
+            // 112-114 學年度填報視角
+            if (activeTabKey === 'template-112-114') {
+                const rY = String(r["學年度"] || '').replace(/學年度/g, '').trim();
+                if (!["112", "113", "114"].includes(rY)) return false;
+            } else if (activeTabKey === 'crawled-meetings') {
+                const src = String(r["資料來源"] || '');
+                const isMeetingOrWeb = src.includes('會議') || src.includes('官網') || src.includes('網站') || src.includes('行政') || src.includes('校務') || src.includes('抓取');
+                if (!isMeetingOrWeb) return false;
+            }
+
+            // 學年度彈性比對
+            if (!matchYear(r["學年度"], yr)) return false;
+
+            // 學院比對
+            if (col && String(r["所屬學院"] || '').trim() !== col.trim()) return false;
+
+            // 系所比對
+            if (dept && String(r["系所名稱"] || '').trim() !== dept.trim()) return false;
+
+            // 競賽層級比對
+            if (lvl && String(r["競賽層級"] || '').trim() !== lvl.trim()) return false;
+
+            // 領獎與發放狀態比對
+            if (st && String(r["發放與領獎狀態"] || '').trim() !== st.trim()) return false;
+
+            // 關鍵字比對
             if (kw) {
                 const match = Object.values(r).some(val => 
                     String(val || '').toLowerCase().includes(kw)
@@ -340,9 +358,35 @@ document.addEventListener('DOMContentLoaded', () => {
         recordCountBadge.textContent = `顯示 ${total} 筆紀錄`;
 
         if (total === 0) {
-            tableBody.innerHTML = `<tr><td colspan="11" style="text-align:center; padding: 40px; color: #94A3B8;">無符合條件之學生獲獎紀錄</td></tr>`;
+            tableBody.innerHTML = `
+                <tr>
+                    <td colspan="11" style="text-align:center; padding: 40px 20px; color: #94A3B8;">
+                        <i class="fa-solid fa-folder-open" style="font-size: 36px; color: #CBD5E1; margin-bottom: 10px; display: inline-block;"></i><br>
+                        <strong style="font-size: 15px; color: #475569;">無符合條件之學生獲獎與領獎紀錄</strong><br>
+                        <span style="font-size: 13px; color: #64748B; margin-top: 4px; display: inline-block;">請嘗試調整或重置搜尋關鍵字/篩選條件，或切換至「全校獲獎總清冊」頁籤</span><br><br>
+                        <button class="btn btn-primary btn-sm" id="btn-clear-search-fallback" style="padding: 6px 16px;">
+                            <i class="fa-solid fa-rotate-left"></i> 一鍵重置所有篩選條件
+                        </button>
+                    </td>
+                </tr>`;
             paginationInfo.textContent = '無資料';
             paginationControls.innerHTML = '';
+
+            const btnClear = document.getElementById('btn-clear-search-fallback');
+            if (btnClear) {
+                btnClear.addEventListener('click', () => {
+                    searchInput.value = '';
+                    filterYear.value = '';
+                    filterCollege.value = '';
+                    filterDept.innerHTML = '<option value="">全部系所</option>';
+                    filterLevel.value = '';
+                    filterStatus.value = '';
+                    document.querySelectorAll('.view-tab').forEach(b => b.classList.remove('active'));
+                    const allTab = document.querySelector('.view-tab[data-tab="all-awards"]');
+                    if (allTab) allTab.classList.add('active');
+                    applyFilters();
+                });
+            }
             return;
         }
 
