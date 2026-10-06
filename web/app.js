@@ -263,93 +263,120 @@ function initFooyinAwardsApp() {
 
         filteredRecords.forEach(r => {
             totalScholarship += Number(r["獎助金金額"] || 0);
-            if (r["發放與領獎狀態"] === "待通知") pendingNotifyCount++;
+            if (r["發放與領獎狀態"] === "待通知" || r["發放與領獎狀態"] === "未申請" || r["發放與領獎狀態"] === "逾期未申請") pendingNotifyCount++;
             if (r["發放與領獎狀態"] === "已線上簽領" || r["發放與領獎狀態"] === "已完成撥款") claimedCount++;
         });
 
-        document.getElementById('kpi-total-count').textContent = total.toLocaleString();
-        document.getElementById('kpi-intl-count').textContent = intlCount.toLocaleString();
-        const ratio = total > 0 ? ((intlCount / total) * 100).toFixed(1) : 0;
-        document.getElementById('kpi-intl-ratio').textContent = `佔全校 ${ratio}%`;
+        const setTxt = (id, txt) => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = txt;
+        };
 
-        document.getElementById('kpi-domestic-count').textContent = domesticCount.toLocaleString();
-        document.getElementById('kpi-scholarship-total').textContent = `$${totalScholarship.toLocaleString()}`;
-        document.getElementById('kpi-pending-notify').textContent = pendingNotifyCount.toLocaleString();
-        document.getElementById('kpi-claimed-status').textContent = `${claimedCount} 筆已成功簽領/撥款`;
+        setTxt('kpi-total-count', total.toLocaleString());
+        setTxt('kpi-intl-count', intlCount.toLocaleString());
+        const ratio = total > 0 ? ((intlCount / total) * 100).toFixed(1) : 0;
+        setTxt('kpi-intl-ratio', `佔全校 ${ratio}%`);
+
+        setTxt('kpi-domestic-count', domesticCount.toLocaleString());
+        setTxt('kpi-scholarship-total', `$${totalScholarship.toLocaleString()}`);
+
+        // 更新未申請與相干 KPI 資訊
+        setTxt('kpi-unapplied-count', pendingNotifyCount.toLocaleString());
+        setTxt('kpi-unapplied-sub', `未簽領與催辦筆數: ${pendingNotifyCount}`);
+        setTxt('unapplied-badge-count', pendingNotifyCount.toLocaleString());
+        setTxt('kpi-pending-notify', pendingNotifyCount.toLocaleString());
+        setTxt('kpi-claimed-status', `${claimedCount} 筆已成功簽領/撥款`);
     }
 
     function renderCharts() {
-        const chartYearFilter = document.getElementById('chart-year-filter');
-        const selectedYear = chartYearFilter ? chartYearFilter.value : '';
+        if (typeof Chart === 'undefined') {
+            console.warn("Chart.js 尚未載入或無法使用，跳過圖表繪製。");
+            return;
+        }
+        try {
+            const chartYearFilter = document.getElementById('chart-year-filter');
+            const selectedYear = chartYearFilter ? chartYearFilter.value : '';
 
-        const recordsToChart = selectedYear ? 
-            allRecords.filter(r => r["學年度"] === selectedYear) : 
-            filteredRecords;
+            const recordsToChart = selectedYear ? 
+                allRecords.filter(r => r["學年度"] === selectedYear) : 
+                filteredRecords;
 
-        // 各學院數據
-        const colMap = {};
-        const lvlMap = {};
-        const statusMap = { "待通知": 0, "通知已發送": 0, "已線上簽領": 0, "已完成撥款": 0 };
+            // 各學院數據
+            const colMap = {};
+            const lvlMap = {};
+            const statusMap = { "待通知": 0, "通知已發送": 0, "已線上簽領": 0, "已完成撥款": 0 };
 
-        recordsToChart.forEach(r => {
-            const col = r["所屬學院"] || "其他";
-            colMap[col] = (colMap[col] || 0) + 1;
+            recordsToChart.forEach(r => {
+                const col = r["所屬學院"] || "其他";
+                colMap[col] = (colMap[col] || 0) + 1;
 
-            const lvl = r["競賽層級"] || "其他";
-            lvlMap[lvl] = (lvlMap[lvl] || 0) + 1;
+                const lvl = r["競賽層級"] || "其他";
+                lvlMap[lvl] = (lvlMap[lvl] || 0) + 1;
 
-            const st = r["發放與領獎狀態"] || "待通知";
-            statusMap[st] = (statusMap[st] || 0) + 1;
-        });
+                const st = r["發放與領獎狀態"] || "待通知";
+                statusMap[st] = (statusMap[st] || 0) + 1;
+            });
 
-        // Chart 1: 學院 Bar Chart
-        const ctxCol = document.getElementById('collegeChart').getContext('2d');
-        if (collegeChart) collegeChart.destroy();
-        collegeChart = new Chart(ctxCol, {
-            type: 'bar',
-            data: {
-                labels: Object.keys(colMap),
-                datasets: [{
-                    label: '獲獎數',
-                    data: Object.values(colMap),
-                    backgroundColor: ['#0F2C59', '#00C49F', '#2563EB', '#7C3AED', '#D97706'],
-                    borderRadius: 8
-                }]
-            },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
-        });
+            // Chart 1: 學院 Bar Chart
+            const canvasCol = document.getElementById('collegeChart');
+            if (canvasCol && canvasCol.getContext) {
+                const ctxCol = canvasCol.getContext('2d');
+                if (collegeChart) collegeChart.destroy();
+                collegeChart = new Chart(ctxCol, {
+                    type: 'bar',
+                    data: {
+                        labels: Object.keys(colMap),
+                        datasets: [{
+                            label: '獲獎數',
+                            data: Object.values(colMap),
+                            backgroundColor: ['#0F2C59', '#00C49F', '#2563EB', '#7C3AED', '#D97706'],
+                            borderRadius: 8
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+                });
+            }
 
-        // Chart 2: 競賽層級 Pie Chart
-        const ctxLvl = document.getElementById('levelChart').getContext('2d');
-        if (levelChart) levelChart.destroy();
-        levelChart = new Chart(ctxLvl, {
-            type: 'doughnut',
-            data: {
-                labels: Object.keys(lvlMap),
-                datasets: [{
-                    data: Object.values(lvlMap),
-                    backgroundColor: ['#7C3AED', '#2563EB', '#10B981', '#F59E0B', '#EF4444']
-                }]
-            },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
-        });
+            // Chart 2: 競賽層級 Pie Chart
+            const canvasLvl = document.getElementById('levelChart');
+            if (canvasLvl && canvasLvl.getContext) {
+                const ctxLvl = canvasLvl.getContext('2d');
+                if (levelChart) levelChart.destroy();
+                levelChart = new Chart(ctxLvl, {
+                    type: 'doughnut',
+                    data: {
+                        labels: Object.keys(lvlMap),
+                        datasets: [{
+                            data: Object.values(lvlMap),
+                            backgroundColor: ['#7C3AED', '#2563EB', '#10B981', '#F59E0B', '#EF4444']
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+                });
+            }
 
-        // Chart 3: 領獎狀態 Progress Chart
-        const ctxSt = document.getElementById('statusChart').getContext('2d');
-        if (statusChart) statusChart.destroy();
-        statusChart = new Chart(ctxSt, {
-            type: 'bar',
-            data: {
-                labels: Object.keys(statusMap),
-                datasets: [{
-                    label: '紀錄筆數',
-                    data: Object.values(statusMap),
-                    backgroundColor: ['#EA580C', '#2563EB', '#00C49F', '#10B981'],
-                    borderRadius: 8
-                }]
-            },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
-        });
+            // Chart 3: 領獎狀態 Progress Chart
+            const canvasSt = document.getElementById('statusChart');
+            if (canvasSt && canvasSt.getContext) {
+                const ctxSt = canvasSt.getContext('2d');
+                if (statusChart) statusChart.destroy();
+                statusChart = new Chart(ctxSt, {
+                    type: 'bar',
+                    data: {
+                        labels: Object.keys(statusMap),
+                        datasets: [{
+                            label: '紀錄筆數',
+                            data: Object.values(statusMap),
+                            backgroundColor: ['#EA580C', '#2563EB', '#00C49F', '#10B981'],
+                            borderRadius: 8
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+                });
+            }
+        } catch (err) {
+            console.warn("圖表渲染過程中發生異常:", err);
+        }
     }
 
     function renderTable() {
