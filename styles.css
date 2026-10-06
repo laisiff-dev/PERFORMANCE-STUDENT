@@ -199,6 +199,58 @@ body {
 .icon-gold { background: #FEF3C7; color: #B45309; }
 .icon-orange { background: #FFEDD5; color: #C2410C; }
 
+/* View Switcher Tabs */
+.view-tabs-section {
+    padding: 8px 12px;
+    border-radius: 16px;
+    margin: 20px 0;
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: var(--shadow-sm);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+}
+
+.view-tabs {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 4px;
+}
+
+.view-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 20px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #475569;
+    background: transparent;
+    border: 1px solid transparent;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s ease;
+}
+
+.view-tab:hover {
+    background: rgba(37, 99, 235, 0.08);
+    color: #1E40AF;
+}
+
+.view-tab.active {
+    background: #2563EB;
+    color: #FFFFFF;
+    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.3);
+}
+
+.view-panel {
+    display: none;
+}
+
+.view-panel.active {
+    display: block;
+}
+
 .kpi-info { display: flex; flex-direction: column; }
 .kpi-label { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
 .kpi-value { font-size: 26px; font-weight: 700; color: var(--text-primary); margin: 2px 0; }

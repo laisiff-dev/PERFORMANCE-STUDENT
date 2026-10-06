@@ -155,6 +155,34 @@ document.addEventListener('DOMContentLoaded', () => {
         const btnMergeAllDiff = document.getElementById('btn-merge-all-diff');
         if (btnMergeAllDiff) btnMergeAllDiff.addEventListener('click', handleMergeAllDiff);
 
+        // 5 大頁籤視角切換器
+        document.querySelectorAll('.view-tab').forEach(tabBtn => {
+            tabBtn.addEventListener('click', (e) => {
+                document.querySelectorAll('.view-tab').forEach(b => b.classList.remove('active'));
+                const btn = e.currentTarget;
+                btn.classList.add('active');
+                const tabKey = btn.dataset.tab;
+
+                if (tabKey === 'diff-analysis') {
+                    openDiffModal();
+                } else if (tabKey === 'unapplied-reminders') {
+                    openUnappliedModal();
+                } else if (tabKey === 'crawled-meetings') {
+                    filterStatus.value = '';
+                    searchInput.value = '會議';
+                    applyFilters();
+                } else if (tabKey === 'template-112-114') {
+                    searchInput.value = '';
+                    filterStatus.value = '';
+                    applyFilters();
+                } else {
+                    searchInput.value = '';
+                    filterStatus.value = '';
+                    applyFilters();
+                }
+            });
+        });
+
         // 批量發送未申請提醒按鈕
         const btnBatchUnappliedModal = document.getElementById('btn-batch-unapplied-remind-modal');
         if (btnBatchUnappliedModal) btnBatchUnappliedModal.addEventListener('click', triggerBatchUnappliedRemind);
