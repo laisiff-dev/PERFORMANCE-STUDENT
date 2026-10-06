@@ -121,9 +121,17 @@ body {
 .btn-primary { background: var(--accent-blue); color: #FFF; }
 .btn-success { background: #10B981; color: #FFF; }
 .btn-warning { background: var(--accent-gold); color: #FFF; }
+.btn-purple { background: #8B5CF6; color: #FFF; }
+.btn-danger { background: #EF4444; color: #FFF; }
 .btn-secondary { background: #E2E8F0; color: #334155; }
 .btn-outline { background: rgba(255, 255, 255, 0.15); color: #FFF; border: 1px solid rgba(255, 255, 255, 0.3); }
 .btn-outline:hover { background: rgba(255, 255, 255, 0.25); }
+
+.icon-red { background: rgba(239, 68, 68, 0.15); color: #EF4444; }
+.text-red { color: #EF4444 !important; }
+.text-orange { color: #F97316 !important; }
+.text-blue { color: #3B82F6 !important; }
+.text-green { color: #10B981 !important; }
 
 /* Dropdown */
 .dropdown { position: relative; display: inline-block; }

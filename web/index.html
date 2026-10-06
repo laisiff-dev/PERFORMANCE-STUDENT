@@ -419,12 +419,12 @@
     <div class="modal" id="import-modal">
         <div class="modal-content glass">
             <div class="modal-header">
-                <h3><i class="fa-solid fa-file-import"></i> 批次匯入獲獎紀錄 (支援 112-114 學年度填報模版)</h3>
+                <h3><i class="fa-solid fa-file-import"></i> 批次匯入獲獎紀錄 (支援 .xls / .xlsx / CSV / JSON / 112-114填報模版)</h3>
                 <button class="close-btn" class="close-modal">&times;</button>
             </div>
             <div class="modal-body">
                 <div class="notify-preview-box" style="margin-bottom: 15px; border-left: 4px solid #3B82F6;">
-                    <p style="margin: 0;"><strong><i class="fa-solid fa-circle-info text-blue"></i> 填報模版說明：</strong> 本系統完整支援「112-114學年度填報資料.xls」之 16 欄位標準試算表，自動解析學期、活動類別、單位與就讀科系相關性。</p>
+                    <p style="margin: 0;"><strong><i class="fa-solid fa-circle-info text-blue"></i> 填報模版與 Excel 支援：</strong> 本系統完整支援「112-114學年度填報資料.xls」及所有 `.xls` / `.xlsx` 試算表，自動解析學期、活動類別、單位與就讀科系相關性。</p>
                     <div style="margin-top: 8px;">
                         <a href="/api/download-template" class="btn btn-secondary btn-sm" style="display:inline-block; font-size:12px;">
                             <i class="fa-solid fa-download"></i> 下載 112-114 填報空白/範例模版 (.xls)
@@ -432,8 +432,8 @@
                     </div>
                 </div>
                 <div class="form-group">
-                    <label>選擇 CSV 或 JSON 檔案匯入：</label>
-                    <input type="file" id="import-file-input" accept=".csv,.json,.xls,.xlsx">
+                    <label>選擇 .xls, .xlsx, .csv 或 .json 檔案匯入：</label>
+                    <input type="file" id="import-file-input" accept=".xls,.xlsx,.csv,.json">
                 </div>
                 <div class="form-group margin-top">
                     <label>或直接黏貼 JSON / CSV 資料內容：</label>

@@ -12,6 +12,8 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Chart.js Library -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- SheetJS Library for .xls and .xlsx Import -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -28,7 +30,13 @@
                 </div>
             </div>
             <div class="header-actions">
-                <button class="btn btn-outline" id="btn-import-award" title="批次匯入 CSV 或 JSON 獲獎資料檔案">
+                <button class="btn btn-purple" id="btn-diff-center" title="顯示最新行政會議、校務會議與官網公告與 112-114 填報資料之差別比對">
+                    <i class="fa-solid fa-code-compare"></i> 會議公告 vs 112-114比對
+                </button>
+                <button class="btn btn-danger" id="btn-unapplied-center" title="開啟未申請獎補助同學提醒與催辦機制">
+                    <i class="fa-solid fa-bell-concierge"></i> 未申請催辦提醒 (<span id="unapplied-badge-count">0</span>)
+                </button>
+                <button class="btn btn-outline" id="btn-import-award" title="依據 112-114 模版或標準格式匯入資料">
                     <i class="fa-solid fa-file-import"></i> 匯入資料
                 </button>
                 <button class="btn btn-outline" id="btn-weekly-update" title="手動觸發每週行政會議/校務會議與公開網站抓取">
@@ -42,11 +50,15 @@
                 </button>
                 <div class="dropdown">
                     <button class="btn btn-success" id="btn-export">
-                        <i class="fa-solid fa-file-export"></i> 匯出報表 <i class="fa-solid fa-chevron-down"></i>
+                        <i class="fa-solid fa-file-export"></i> 匯出與下載模版 <i class="fa-solid fa-chevron-down"></i>
                     </button>
                     <div class="dropdown-menu" id="export-menu">
-                        <a href="#" id="export-excel"><i class="fa-solid fa-file-excel"></i> 匯出 Excel (.xlsx)</a>
-                        <a href="#" id="export-csv"><i class="fa-solid fa-file-csv"></i> 匯出 CSV (UTF-8 BOM)</a>
+                        <a href="/api/export/112-114-excel" id="export-112-114-excel"><i class="fa-solid fa-file-excel" style="color:#10B981;"></i> 匯出 112-114 填報模版 (.xlsx)</a>
+                        <a href="/api/export/112-114-csv" id="export-112-114-csv"><i class="fa-solid fa-file-csv" style="color:#3B82F6;"></i> 匯出 112-114 填報模版 (.csv)</a>
+                        <a href="/api/download-template" id="download-template-file"><i class="fa-solid fa-download" style="color:#F59E0B;"></i> 下載 112-114 填報原始模版 (.xls)</a>
+                        <hr style="border:0; border-top:1px solid rgba(255,255,255,0.1); margin:4px 0;">
+                        <a href="#" id="export-excel"><i class="fa-solid fa-table"></i> 匯出標準資料庫 (.xlsx)</a>
+                        <a href="#" id="export-csv"><i class="fa-solid fa-file-csv"></i> 匯出 UTF-8 BOM CSV</a>
                         <a href="#" id="export-json"><i class="fa-solid fa-file-code"></i> 匯出 JSON 資料庫</a>
                     </div>
                 </div>
@@ -87,12 +99,20 @@
                     <span class="kpi-sub">新臺幣 NTD</span>
                 </div>
             </div>
-            <div class="kpi-card glass">
-                <div class="kpi-icon icon-orange"><i class="fa-solid fa-bell"></i></div>
+            <div class="kpi-card glass" id="card-unapplied-kpi" style="cursor:pointer;" title="點擊查看未申請同學提醒專區">
+                <div class="kpi-icon icon-red"><i class="fa-solid fa-user-clock"></i></div>
                 <div class="kpi-info">
-                    <span class="kpi-label">待發送領獎通知</span>
-                    <h2 class="kpi-value" id="kpi-pending-notify">0</h2>
-                    <span class="kpi-sub" id="kpi-claimed-status">0 筆已完成線上簽領</span>
+                    <span class="kpi-label">未申請獎補助同學</span>
+                    <h2 class="kpi-value" id="kpi-unapplied-count" style="color:#EF4444;">0</h2>
+                    <span class="kpi-sub" id="kpi-unapplied-sub">未簽領金額: $0</span>
+                </div>
+            </div>
+            <div class="kpi-card glass" id="card-diff-kpi" style="cursor:pointer;" title="點擊檢視最新抓取與 112-114 差別比對">
+                <div class="kpi-icon icon-purple"><i class="fa-solid fa-code-compare"></i></div>
+                <div class="kpi-info">
+                    <span class="kpi-label">會議抓取差別比對</span>
+                    <h2 class="kpi-value" id="kpi-diff-count" style="color:#8B5CF6;">4</h2>
+                    <span class="kpi-sub" id="kpi-diff-sub">含 2 筆最新榮譽公告</span>
                 </div>
             </div>
         </section>
@@ -399,17 +419,25 @@
     <div class="modal" id="import-modal">
         <div class="modal-content glass">
             <div class="modal-header">
-                <h3><i class="fa-solid fa-file-import"></i> 批次匯入獲獎紀錄 (CSV / JSON)</h3>
+                <h3><i class="fa-solid fa-file-import"></i> 批次匯入獲獎紀錄 (支援 .xls / .xlsx / CSV / JSON / 112-114填報模版)</h3>
                 <button class="close-btn" class="close-modal">&times;</button>
             </div>
             <div class="modal-body">
+                <div class="notify-preview-box" style="margin-bottom: 15px; border-left: 4px solid #3B82F6;">
+                    <p style="margin: 0;"><strong><i class="fa-solid fa-circle-info text-blue"></i> 填報模版與 Excel 支援：</strong> 本系統完整支援「112-114學年度填報資料.xls」及所有 `.xls` / `.xlsx` 試算表，自動解析學期、活動類別、單位與就讀科系相關性。</p>
+                    <div style="margin-top: 8px;">
+                        <a href="/api/download-template" class="btn btn-secondary btn-sm" style="display:inline-block; font-size:12px;">
+                            <i class="fa-solid fa-download"></i> 下載 112-114 填報空白/範例模版 (.xls)
+                        </a>
+                    </div>
+                </div>
                 <div class="form-group">
-                    <label>選擇 CSV 或 JSON 檔案匯入：</label>
-                    <input type="file" id="import-file-input" accept=".csv,.json">
+                    <label>選擇 .xls, .xlsx, .csv 或 .json 檔案匯入：</label>
+                    <input type="file" id="import-file-input" accept=".xls,.xlsx,.csv,.json">
                 </div>
                 <div class="form-group margin-top">
                     <label>或直接黏貼 JSON / CSV 資料內容：</label>
-                    <textarea id="import-text-input" rows="8" placeholder='例如 JSON 陣列或 CSV 文字...' class="text-preview"></textarea>
+                    <textarea id="import-text-input" rows="8" placeholder='例如 112-114 填報模版 CSV 文字或 JSON 陣列...' class="text-preview"></textarea>
                 </div>
                 <div id="import-status-msg" class="margin-top" style="font-weight:600;"></div>
             </div>
@@ -422,7 +450,115 @@
         </div>
     </div>
 
+    <!-- 模態彈窗：會議公告抓取 vs 112-114填報資料 比對中心 Modal -->
+    <div class="modal" id="diff-modal">
+        <div class="modal-content glass" style="max-width: 900px;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-code-compare"></i> 行政/校務會議與官網公告抓取 vs 112-114填報資料 比對中心</h3>
+                <button class="close-btn" class="close-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="diff-summary-strip" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 15px;">
+                    <div class="kpi-card glass" style="padding: 10px 15px;">
+                        <small style="color: #94A3B8;">最新抓取公告筆數</small>
+                        <h3 id="diff-crawled-total" style="color: #60A5FA; margin: 4px 0;">0</h3>
+                    </div>
+                    <div class="kpi-card glass" style="padding: 10px 15px;">
+                        <small style="color: #94A3B8;">與 112-114 庫相符</small>
+                        <h3 id="diff-matched-total" style="color: #34D399; margin: 4px 0;">0</h3>
+                    </div>
+                    <div class="kpi-card glass" style="padding: 10px 15px;">
+                        <small style="color: #94A3B8;">最新抓取新增榮譽</small>
+                        <h3 id="diff-new-total" style="color: #A78BFA; margin: 4px 0;">0</h3>
+                    </div>
+                    <div class="kpi-card glass" style="padding: 10px 15px;">
+                        <small style="color: #94A3B8;">欄位修訂差異項</small>
+                        <h3 id="diff-field-total" style="color: #FBBF24; margin: 4px 0;">0</h3>
+                    </div>
+                </div>
+
+                <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>差別狀態</th>
+                                <th>最新抓取資料來源</th>
+                                <th>獲獎學生</th>
+                                <th>競賽/作品名稱與榮譽</th>
+                                <th>對比差異說明</th>
+                                <th>功能操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="diff-table-body">
+                            <!-- 動態插入差別比對紀錄 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary close-modal">關閉</button>
+                <button class="btn btn-purple" id="btn-merge-all-diff">
+                    <i class="fa-solid fa-file-circle-check"></i> 一鍵採納最新會議榮譽至 112-114 庫
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 模態彈窗：未申請獎補助同學提醒機制 Modal -->
+    <div class="modal" id="unapplied-modal">
+        <div class="modal-content glass" style="max-width: 900px;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-bell-concierge"></i> 未申請獎補助金同學催辦與提醒機制</h3>
+                <button class="close-btn" class="close-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="notify-preview-box" style="margin-bottom: 15px; border-left: 4px solid #EF4444;">
+                    <p style="margin: 0;">
+                        <strong><i class="fa-solid fa-triangle-exclamation text-orange"></i> 系統動態追蹤報告：</strong>
+                        全校共有 <strong id="unapplied-modal-count" class="text-orange">0</strong> 位學生獲獎但尚<strong class="text-red">未完成獎補助金線上申請/簽領</strong>，
+                        涉及金額達 <strong id="unapplied-modal-amount" class="text-gold">$0</strong> 元。
+                    </p>
+                </div>
+
+                <div style="display: flex; gap: 10px; margin-bottom: 15px; align-items: center;">
+                    <label><strong>發送通知管道:</strong></label>
+                    <select id="unapplied-channel-select" class="form-control" style="width: 200px;">
+                        <option value="email">Email 催辦通知信範本</option>
+                        <option value="line">LINE Notify 催辦簡訊</option>
+                        <option value="portal">輔英校園 Portal 彈窗提醒</option>
+                    </select>
+                    <button class="btn btn-warning" id="btn-batch-unapplied-remind-modal">
+                        <i class="fa-solid fa-paper-plane"></i> 一鍵發送全體未申請同學催辦提醒
+                    </button>
+                </div>
+
+                <div class="table-responsive" style="max-height: 360px; overflow-y: auto;">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>#編號</th>
+                                <th>獲獎學生 (學號)</th>
+                                <th>學院 / 系所</th>
+                                <th>賽事與作品名稱</th>
+                                <th>未簽領金額</th>
+                                <th>發放狀態</th>
+                                <th>催辦提醒操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="unapplied-table-body">
+                            <!-- 動態插入未申請同學紀錄 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary close-modal">關閉</button>
+            </div>
+        </div>
+    </div>
+
     <script src="data.js"></script>
     <script src="app.js"></script>
 </body>
 </html>
+

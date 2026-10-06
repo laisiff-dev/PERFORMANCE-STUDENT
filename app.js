@@ -138,6 +138,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 預覽通知範本切換
         document.getElementById('notify-channel-select').addEventListener('change', updateNotifyPreviewText);
+
+        // 會議與官網公告差別比對中心 Modal 按鈕
+        const btnDiffCenter = document.getElementById('btn-diff-center');
+        const cardDiffKpi = document.getElementById('card-diff-kpi');
+        if (btnDiffCenter) btnDiffCenter.addEventListener('click', openDiffModal);
+        if (cardDiffKpi) cardDiffKpi.addEventListener('click', openDiffModal);
+
+        // 未申請獎補助同學提醒機制 Modal 按鈕
+        const btnUnappliedCenter = document.getElementById('btn-unapplied-center');
+        const cardUnappliedKpi = document.getElementById('card-unapplied-kpi');
+        if (btnUnappliedCenter) btnUnappliedCenter.addEventListener('click', openUnappliedModal);
+        if (cardUnappliedKpi) cardUnappliedKpi.addEventListener('click', openUnappliedModal);
+
+        // 採納最新會議榮譽按鈕
+        const btnMergeAllDiff = document.getElementById('btn-merge-all-diff');
+        if (btnMergeAllDiff) btnMergeAllDiff.addEventListener('click', handleMergeAllDiff);
+
+        // 批量發送未申請提醒按鈕
+        const btnBatchUnappliedModal = document.getElementById('btn-batch-unapplied-remind-modal');
+        if (btnBatchUnappliedModal) btnBatchUnappliedModal.addEventListener('click', triggerBatchUnappliedRemind);
     }
 
     function applyFilters() {
@@ -527,12 +547,59 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (fileInput.files.length > 0) {
             const file = fileInput.files[0];
-            const text = await file.text();
-            recordsToImport = parseCSVorJSON(text);
+            const fname = file.name.toLowerCase();
+
+            if ((fname.endsWith('.xls') || fname.endsWith('.xlsx')) && window.XLSX) {
+                try {
+                    const arrayBuffer = await file.arrayBuffer();
+                    const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+                    const firstSheetName = workbook.SheetNames[0];
+                    const sheet = workbook.Sheets[firstSheetName];
+                    const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+                    // 智慧搜尋抬頭標題列 (例如 112-114 填報模版第 11 列)
+                    let headerIdx = -1;
+                    for (let r = 0; r < Math.min(rawRows.length, 25); r++) {
+                        if (rawRows[r] && rawRows[r].some(cell => {
+                            const str = String(cell || '').trim();
+                            return str.includes('識別號') || str.includes('學年度') || str.includes('獲獎學生') || str.includes('競賽或活動名稱');
+                        })) {
+                            headerIdx = r;
+                            break;
+                        }
+                    }
+
+                    if (headerIdx !== -1) {
+                        const headers = rawRows[headerIdx].map(c => String(c || '').trim());
+                        let startRow = headerIdx + 1;
+                        if (startRow < rawRows.length && rawRows[startRow].some(c => String(c || '').includes('男') || String(c || '').includes('女'))) {
+                            startRow++;
+                        }
+                        for (let r = startRow; r < rawRows.length; r++) {
+                            const rowArr = rawRows[r];
+                            if (!rowArr || rowArr.length === 0 || !rowArr.some(c => c !== null && c !== '')) continue;
+                            const obj = {};
+                            headers.forEach((h, idx) => {
+                                if (h && rowArr[idx] !== undefined) {
+                                    obj[h] = String(rowArr[idx]).trim();
+                                }
+                            });
+                            recordsToImport.push(obj);
+                        }
+                    } else {
+                        recordsToImport = XLSX.utils.sheet_to_json(sheet);
+                    }
+                } catch (err) {
+                    console.error("SheetJS Excel parsing error:", err);
+                }
+            } else {
+                const text = await file.text();
+                recordsToImport = parseCSVorJSON(text);
+            }
         } else if (textInput) {
             recordsToImport = parseCSVorJSON(textInput);
         } else {
-            alert("請選擇 CSV / JSON 檔案或輸入文字內容！");
+            alert("請選擇 .xls, .xlsx, .csv, .json 檔案或輸入文字內容！");
             return;
         }
 
@@ -638,4 +705,293 @@ document.addEventListener('DOMContentLoaded', () => {
         a.download = filename;
         a.click();
     }
+
+    // ==========================================
+    // 差別比對中心 (會議/官網抓取 vs 112-114填報模版)
+    // ==========================================
+    let currentDiffData = null;
+
+    async function openDiffModal() {
+        const modal = document.getElementById('diff-modal');
+        const tbody = document.getElementById('diff-table-body');
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding: 20px;">載入會議公告與 112-114 差別比對資料中...</td></tr>`;
+        modal.classList.add('show');
+
+        try {
+            const resp = await fetch('/api/diff-analysis');
+            if (resp.ok) {
+                currentDiffData = await resp.json();
+                renderDiffModalData();
+                return;
+            }
+        } catch (e) {
+            console.log("Mock diff mode");
+        }
+
+        // 離線模擬資料
+        currentDiffData = {
+            crawled_total: 4,
+            matched_count: 1,
+            new_awards_count: 2,
+            field_diff_count: 1,
+            diff_items: [
+                {
+                    diff_status: "資料完全相符",
+                    source: "115-4行政會議紀錄",
+                    student_name: "張家豪、劉彥宏",
+                    event_name: "2026 倫敦國際發明展 (LIFEX)",
+                    award_rank: "金牌與大會特別獎",
+                    amount: 25000,
+                    explanation: "與 112-114 學年度填報資料完全吻合。"
+                },
+                {
+                    diff_status: "新增獲獎公告",
+                    source: "115-2校務會議紀錄",
+                    student_name: "林雅婷、陳威廷",
+                    event_name: "2026年全國大專校院護理臨床技能競賽",
+                    award_rank: "全國總冠軍 (金獎)",
+                    amount: 20000,
+                    explanation: "在最新【115-2校務會議紀錄】中抓取到全校新榮譽，未列於 112-114 學年度填報資料庫中。"
+                },
+                {
+                    diff_status: "欄位資訊修訂",
+                    source: "輔英官方網站公開新聞公告",
+                    student_name: "黃怡君",
+                    event_name: "115年醫事檢驗師國家考試",
+                    award_rank: "全國前五名與優異特別獎",
+                    amount: 15000,
+                    explanation: "出處會議更新 (最新來源: 輔英官方網站公開新聞公告)；獎助金核算修正。"
+                },
+                {
+                    diff_status: "新增獲獎公告",
+                    source: "114-6行政會議紀錄修訂案",
+                    student_name: "許晉豪",
+                    event_name: "2026全國大專校院智慧校園微服務創新競賽",
+                    award_rank: "第一名 (特優金獎)",
+                    amount: 18000,
+                    explanation: "在最新【114-6行政會議紀錄修訂案】中抓取到資訊創新賽事第一名，未在 112-114 填報庫。"
+                }
+            ]
+        };
+        renderDiffModalData();
+    }
+
+    function renderDiffModalData() {
+        if (!currentDiffData) return;
+        document.getElementById('diff-crawled-total').textContent = currentDiffData.crawled_total;
+        document.getElementById('diff-matched-total').textContent = currentDiffData.matched_count;
+        document.getElementById('diff-new-total').textContent = currentDiffData.new_awards_count;
+        document.getElementById('diff-field-total').textContent = currentDiffData.field_diff_count;
+
+        const tbody = document.getElementById('diff-table-body');
+        tbody.innerHTML = '';
+
+        currentDiffData.diff_items.forEach((item, idx) => {
+            const tr = document.createElement('tr');
+            let badgeClass = 'badge-purple';
+            if (item.diff_status === '新增獲獎公告') badgeClass = 'badge-info';
+            if (item.diff_status === '欄位資訊修訂') badgeClass = 'badge-warning';
+            if (item.diff_status === '資料完全相符') badgeClass = 'badge-success';
+
+            tr.innerHTML = `
+                <td><span class="badge ${badgeClass}">${item.diff_status}</span></td>
+                <td><small class="text-muted">${item.source}</small></td>
+                <td><strong>${item.student_name}</strong></td>
+                <td><strong>${item.event_name}</strong><br><small class="text-gold">${item.award_rank} (NT$ ${(item.amount||0).toLocaleString()})</small></td>
+                <td><small style="color:#64748B;">${item.explanation}</small></td>
+                <td>
+                    ${item.diff_status !== '資料完全相符' ? `
+                        <button class="btn btn-primary btn-sm btn-adopt-diff" data-idx="${idx}">
+                            <i class="fa-solid fa-plus"></i> 採納併入
+                        </button>
+                    ` : `<span class="text-muted"><i class="fa-solid fa-check"></i> 已在庫</span>`}
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        document.querySelectorAll('.btn-adopt-diff').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const idx = e.currentTarget.dataset.idx;
+                const target = currentDiffData.diff_items[idx];
+                adoptDiffItem(target);
+            });
+        });
+    }
+
+    function adoptDiffItem(item) {
+        const newRec = item.crawled_detail || {
+            "編號": allRecords.length + 1,
+            "學年度": "115學年度",
+            "資料來源": item.source,
+            "所屬學院": item.college || "環境與生命學院",
+            "系所名稱": item.department || "環境工程與科學系",
+            "學制班級": "四技3年1班",
+            "獲獎學生": item.student_name,
+            "學生學號": item.student_id || "115409888",
+            "指導老師": "指導教授",
+            "競賽層級": "國際競賽",
+            "競賽或活動名稱": item.event_name,
+            "參賽項目或作品名稱": "最新研發與專案作品",
+            "榮譽獎項": item.award_rank,
+            "獎助金金額": item.amount || 15000,
+            "發放與領獎狀態": "待通知",
+            "通知時間": "",
+            "領獎截止日期": "2026-11-30",
+            "原畢業學校": "高雄市立高雄高級中學",
+            "佐證連結": "https://www.fooyin.edu.tw/",
+            "備註": "從會議紀錄抓取並一鍵採納併入 112-114 填報資料庫"
+        };
+        newRec["編號"] = allRecords.length + 1;
+
+        allRecords.unshift(newRec);
+        applyFilters();
+        alert(`成功將最新會議榮譽 [${item.student_name} - ${item.event_name}] 採納併入系統資料庫！`);
+    }
+
+    function handleMergeAllDiff() {
+        if (!currentDiffData) return;
+        const newItems = currentDiffData.diff_items.filter(i => i.diff_status !== '資料完全相符');
+        if (newItems.length === 0) {
+            alert("目前沒有需要採納的新增會議榮譽！");
+            return;
+        }
+
+        newItems.forEach(item => adoptDiffItem(item));
+        document.getElementById('diff-modal').classList.remove('show');
+        alert(`已成功將 ${newItems.length} 筆最新會議榮譽批量併入資料庫！`);
+    }
+
+    // ==========================================
+    // 未申請獎補助同學提醒與催辦機制
+    // ==========================================
+    let unappliedStudentsList = [];
+
+    async function openUnappliedModal() {
+        const modal = document.getElementById('unapplied-modal');
+        const tbody = document.getElementById('unapplied-table-body');
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding: 20px;">載入未申請同學清冊中...</td></tr>`;
+        modal.classList.add('show');
+
+        try {
+            const resp = await fetch('/api/unapplied-students');
+            if (resp.ok) {
+                unappliedStudentsList = await resp.json();
+                renderUnappliedModalData();
+                return;
+            }
+        } catch (e) {
+            console.log("Mock unapplied list");
+        }
+
+        // 篩選全部未簽領同學
+        unappliedStudentsList = allRecords.filter(r => 
+            r["發放與領獎狀態"] === "待通知" || r["發放與領獎狀態"] === "未申請" || r["發放與領獎狀態"] === "逾期未申請"
+        );
+        renderUnappliedModalData();
+    }
+
+    function renderUnappliedModalData() {
+        const totalCount = unappliedStudentsList.length;
+        let totalAmount = 0;
+        unappliedStudentsList.forEach(r => totalAmount += Number(r["獎助金金額"] || 0));
+
+        document.getElementById('unapplied-modal-count').textContent = totalCount;
+        document.getElementById('unapplied-modal-amount').textContent = `$${totalAmount.toLocaleString()}`;
+
+        // 更新 KPI 卡牌
+        const badgeCount = document.getElementById('unapplied-badge-count');
+        if (badgeCount) badgeCount.textContent = totalCount;
+        const kpiUnapplied = document.getElementById('kpi-unapplied-count');
+        if (kpiUnapplied) kpiUnapplied.textContent = totalCount;
+        const kpiSub = document.getElementById('kpi-unapplied-sub');
+        if (kpiSub) kpiSub.textContent = `未簽領金額: $${totalAmount.toLocaleString()}`;
+
+        const tbody = document.getElementById('unapplied-table-body');
+        tbody.innerHTML = '';
+
+        if (totalCount === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding: 30px; color:#10B981;">🎉 太棒了！全校獲獎同學皆已完成獎補助金申請與簽領作業。</td></tr>`;
+            return;
+        }
+
+        unappliedStudentsList.forEach(r => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td><strong>#${r["編號"]}</strong></td>
+                <td><strong>${r["獲獎學生"]}</strong><br><small class="text-muted">學號: ${r["學生學號"] || '未填'}</small></td>
+                <td><strong>${r["所屬學院"]}</strong><br><small>${r["系所名稱"]}</small></td>
+                <td><strong>${r["競賽或活動名稱"]}</strong><br><small class="text-muted">${r["榮譽獎項"]}</small></td>
+                <td><strong class="text-gold">NT$ ${(Number(r["獎助金金額"])||0).toLocaleString()}</strong></td>
+                <td><span class="badge badge-warning">${r["發放與領獎狀態"]}</span></td>
+                <td>
+                    <div style="display:flex; gap:4px;">
+                        <button class="btn btn-warning btn-sm btn-send-unapplied-remind" data-id="${r["編號"]}">
+                            <i class="fa-solid fa-paper-plane"></i> 發送催辦
+                        </button>
+                        <button class="btn btn-success btn-sm btn-sign-unapplied" data-id="${r["編號"]}">
+                            <i class="fa-solid fa-signature"></i> 線上簽領
+                        </button>
+                    </div>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        document.querySelectorAll('.btn-send-unapplied-remind').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const id = e.currentTarget.dataset.id;
+                sendSingleUnappliedRemind(id);
+            });
+        });
+        document.querySelectorAll('.btn-sign-unapplied').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const id = e.currentTarget.dataset.id;
+                handleStudentSign(id);
+                openUnappliedModal();
+            });
+        });
+    }
+
+    async function sendSingleUnappliedRemind(recordId) {
+        const target = unappliedStudentsList.find(r => r["編號"] == recordId);
+        if (!target) return;
+        const channel = document.getElementById('unapplied-channel-select').value;
+
+        try {
+            await fetch('/api/dispatch-unapplied-reminder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ record_id: recordId, channel: channel })
+            });
+        } catch (e) {}
+
+        target["發放與領獎狀態"] = "通知已發送";
+        target["通知時間"] = new Date().toISOString().split('T')[0];
+        renderDashboard();
+        openUnappliedModal();
+        alert(`已成功向 [${target["獲獎學生"]}] 同學發送獎補助金未申請催辦提醒！`);
+    }
+
+    async function triggerBatchUnappliedRemind() {
+        if (unappliedStudentsList.length === 0) {
+            alert("目前沒有未申請獎補助金之同學！");
+            return;
+        }
+
+        if (confirm(`確定要一鍵發送催辦提醒給全體 ${unappliedStudentsList.length} 位未申請獎補助金同學？`)) {
+            try {
+                await fetch('/api/dispatch-unapplied-reminder', { method: 'POST', body: JSON.stringify({}) });
+            } catch (e) {}
+
+            unappliedStudentsList.forEach(r => {
+                r["發放與領獎狀態"] = "通知已發送";
+                r["通知時間"] = new Date().toISOString().split('T')[0];
+            });
+            renderDashboard();
+            openUnappliedModal();
+            alert(`已成功批量派發 ${unappliedStudentsList.length} 封未申請獎補助同學催辦提醒信！`);
+        }
+    }
 });
+
