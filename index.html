@@ -200,10 +200,6 @@
                         <option value="115學年度">115學年度</option>
                     </select>
                 </div>
-                        <option value="114學年度">114學年度</option>
-                        <option value="115學年度">115學年度</option>
-                    </select>
-                </div>
                 <div class="filter-group">
                     <label><i class="fa-solid fa-building-columns"></i> 所屬學院</label>
                     <select id="filter-college">
@@ -260,17 +256,31 @@
                 <table class="data-table">
                     <thead>
                         <tr>
-                            <th>#編號</th>
+                            <!-- 112-114 學年度填報資料第 12 列前 16 個標準欄位 -->
+                            <th>#識別號</th>
                             <th>學年度</th>
-                            <th>資料來源</th>
-                            <th>學院 / 系所</th>
-                            <th>獲獎學生 (學號)</th>
-                            <th>競賽與作品名稱</th>
-                            <th>榮譽獎項</th>
-                            <th>獎助金額</th>
-                            <th>領獎狀態</th>
-                            <th>佐證</th>
-                            <th>功能操作</th>
+                            <th>學期</th>
+                            <th>活動類別</th>
+                            <th>活動主辦單位</th>
+                            <th>活動名稱</th>
+                            <th>競賽項目</th>
+                            <th>個人/團體</th>
+                            <th>人數(男)</th>
+                            <th>人數(女)</th>
+                            <th>是否獲獎</th>
+                            <th>獲獎名次</th>
+                            <th>活動起始日期</th>
+                            <th>活動結束日期</th>
+                            <th>學生所屬系科代碼</th>
+                            <th>科系相關</th>
+                            <!-- 後續延伸欄位放在後面 -->
+                            <th style="background: rgba(124, 58, 237, 0.15);">所屬學院 / 系所</th>
+                            <th style="background: rgba(124, 58, 237, 0.15);">獲獎學生 (學號)</th>
+                            <th style="background: rgba(124, 58, 237, 0.15);">指導老師</th>
+                            <th style="background: rgba(124, 58, 237, 0.15);">獎助金額</th>
+                            <th style="background: rgba(124, 58, 237, 0.15);">領獎與發放狀態</th>
+                            <th style="background: rgba(124, 58, 237, 0.15);">佐證</th>
+                            <th style="background: rgba(124, 58, 237, 0.15);">功能操作</th>
                         </tr>
                     </thead>
                     <tbody id="table-body">
@@ -348,18 +358,95 @@
             </div>
             <div class="modal-body">
                 <form id="add-award-form" class="grid-form">
+                    <!-- 112-114 填報模版前 16 個標準欄位 -->
                     <div class="form-group">
-                        <label>學年度 *</label>
+                        <label>1. 學年度 *</label>
                         <select id="add-year" required>
                             <option value="115學年度">115學年度</option>
                             <option value="114學年度">114學年度</option>
                             <option value="113學年度">113學年度</option>
+                            <option value="112學年度">112學年度</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>資料來源 *</label>
-                        <input type="text" id="add-source" value="115-4行政會議" required>
+                        <label>2. 學期 *</label>
+                        <select id="add-term" required>
+                            <option value="下">下學期</option>
+                            <option value="上">上學期</option>
+                        </select>
                     </div>
+                    <div class="form-group">
+                        <label>3. 活動類別 *</label>
+                        <select id="add-cat" required>
+                            <option value="全國">全國</option>
+                            <option value="國際">國際</option>
+                            <option value="體育">體育</option>
+                            <option value="證照">證照</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>4. 活動主辦單位 (資料來源) *</label>
+                        <input type="text" id="add-source" value="輔英科技大學" required>
+                    </div>
+                    <div class="form-group">
+                        <label>5. 活動名稱 *</label>
+                        <input type="text" id="add-event" placeholder="賽事完整名稱" required>
+                    </div>
+                    <div class="form-group">
+                        <label>6. 競賽項目 *</label>
+                        <input type="text" id="add-work" placeholder="作品題目或參賽項目" required>
+                    </div>
+                    <div class="form-group">
+                        <label>7. 個人/團體競賽 *</label>
+                        <select id="add-group-type">
+                            <option value="個人競賽">個人競賽</option>
+                            <option value="團體競賽">團體競賽</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>8. 人數(男)</label>
+                        <input type="number" id="add-male-count" value="0" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>9. 人數(女)</label>
+                        <input type="number" id="add-female-count" value="1" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>10. 是否獲獎 *</label>
+                        <select id="add-is-awarded">
+                            <option value="是">是</option>
+                            <option value="否">否</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>11. 獲獎名次 (榮譽獎項) *</label>
+                        <input type="text" id="add-award" placeholder="例如：特優、冠軍、金牌" required>
+                    </div>
+                    <div class="form-group">
+                        <label>12. 活動起始日期</label>
+                        <input type="date" id="add-start-date" value="2026-03-01">
+                    </div>
+                    <div class="form-group">
+                        <label>13. 活動結束日期</label>
+                        <input type="date" id="add-end-date" value="2026-03-15">
+                    </div>
+                    <div class="form-group">
+                        <label>14. 學生所屬系科代碼</label>
+                        <input type="text" id="add-dept-code" placeholder="例如：護理系 - 1445">
+                    </div>
+                    <div class="form-group">
+                        <label>15. 競賽項目是否與就讀科系相關</label>
+                        <select id="add-dept-rel">
+                            <option value="是">是</option>
+                            <option value="否">否</option>
+                        </select>
+                    </div>
+
+                    <!-- 後續延伸欄位放在後面 -->
+                    <div class="form-group" style="grid-column: span 2; margin-top: 10px; border-top: 1px dashed rgba(255,255,255,0.2); padding-top: 10px;">
+                        <span style="font-size: 13px; font-weight: 700; color: #A78BFA;"><i class="fa-solid fa-plus-circle"></i> 其餘後續延伸欄位：</span>
+                    </div>
+
                     <div class="form-group">
                         <label>所屬學院 *</label>
                         <select id="add-college" required>
@@ -399,18 +486,6 @@
                             <option value="專業證照">專業證照</option>
                             <option value="特殊優良事蹟">特殊優良事蹟</option>
                         </select>
-                    </div>
-                    <div class="form-group">
-                        <label>競賽或活動名稱 *</label>
-                        <input type="text" id="add-event" placeholder="賽事完整名稱" required>
-                    </div>
-                    <div class="form-group">
-                        <label>參賽項目或作品名稱 *</label>
-                        <input type="text" id="add-work" placeholder="作品題目或項目" required>
-                    </div>
-                    <div class="form-group">
-                        <label>榮譽獎項 *</label>
-                        <input type="text" id="add-award" placeholder="例如：金牌、第一名" required>
                     </div>
                     <div class="form-group">
                         <label>獎助金金額 (NTD)</label>

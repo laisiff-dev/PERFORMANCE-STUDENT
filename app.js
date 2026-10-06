@@ -360,7 +360,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (total === 0) {
             tableBody.innerHTML = `
                 <tr>
-                    <td colspan="11" style="text-align:center; padding: 40px 20px; color: #94A3B8;">
+                    <td colspan="23" style="text-align:center; padding: 40px 20px; color: #94A3B8;">
                         <i class="fa-solid fa-folder-open" style="font-size: 36px; color: #CBD5E1; margin-bottom: 10px; display: inline-block;"></i><br>
                         <strong style="font-size: 15px; color: #475569;">無符合條件之學生獲獎與領獎紀錄</strong><br>
                         <span style="font-size: 13px; color: #64748B; margin-top: 4px; display: inline-block;">請嘗試調整或重置搜尋關鍵字/篩選條件，或切換至「全校獲獎總清冊」頁籤</span><br><br>
@@ -405,34 +405,53 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // 競賽層級 Badge
             let levelBadgeClass = 'badge-info';
-            if (r["競賽層級"] === '國際競賽') levelBadgeClass = 'badge-purple';
-            if (r["競賽層級"] === '專業證照') levelBadgeClass = 'badge-success';
+            const catLevel = r["活動類別"] || r["競賽層級"] || '國內競賽';
+            if (catLevel.includes('國際')) levelBadgeClass = 'badge-purple';
+            if (catLevel.includes('證照')) levelBadgeClass = 'badge-success';
+
+            const deptCodeStr = r["學生所屬系科 - 系所代碼"] || (r["系所名稱"] ? (r["系所名稱"] + ' - 1445') : '護理系 - 1445');
+            const recId = r["識別號"] || r["編號"];
 
             tr.innerHTML = `
-                <td><strong>#${r["編號"]}</strong></td>
-                <td>${r["學年度"]}</td>
-                <td><small class="text-muted">${r["資料來源"]}</small></td>
-                <td><strong>${r["所屬學院"]}</strong><br><small>${r["系所名稱"]}</small></td>
-                <td><strong>${r["獲獎學生"]}</strong><br><small class="text-muted">學號: ${r["學生學號"] || '未填'}</small></td>
-                <td><strong>${r["競賽或活動名稱"]}</strong><br><small class="text-muted">作品: ${r["參賽項目或作品名稱"]}</small></td>
-                <td><span class="badge ${levelBadgeClass}">${r["榮譽獎項"]}</span></td>
-                <td><strong class="text-gold">NT$ ${(Number(r["獎助金金額"])||0).toLocaleString()}</strong></td>
-                <td><span class="badge ${statusBadgeClass}">${r["發放與領獎狀態"]}</span></td>
-                <td>
-                    <a href="${r["佐證連結"]}" target="_blank" class="btn btn-secondary btn-sm" style="padding: 4px 8px; font-size: 12px;">
+                <!-- 112-114 學年度填報資料第 12 列前 16 個標準欄位 -->
+                <td><strong>#${recId}</strong></td>
+                <td>${r["學年度"] || ''}</td>
+                <td>${r["學期"] || '下'}</td>
+                <td><span class="badge ${levelBadgeClass}">${r["活動類別"] || catLevel}</span></td>
+                <td><small class="text-muted">${r["活動主辦單位"] || r["資料來源"] || ''}</small></td>
+                <td><strong>${r["活動名稱"] || r["競賽或活動名稱"] || ''}</strong></td>
+                <td><small>${r["競賽項目"] || r["參賽項目或作品名稱"] || ''}</small></td>
+                <td><small>${r["個人/團體競賽"] || '個人競賽'}</small></td>
+                <td>${r["人數(男)"] !== undefined ? r["人數(男)"] : '0'}</td>
+                <td>${r["人數(女)"] !== undefined ? r["人數(女)"] : '1'}</td>
+                <td><span class="badge badge-success">${r["是否獲獎"] || '是'}</span></td>
+                <td><span class="badge ${levelBadgeClass}">${r["獲獎名次"] || r["榮譽獎項"] || ''}</span></td>
+                <td><small>${r["活動起始日期"] || r["通知時間"] || ''}</small></td>
+                <td><small>${r["活動結束日期"] || r["領獎截止日期"] || ''}</small></td>
+                <td><small class="text-muted">${deptCodeStr}</small></td>
+                <td><small>${r["競賽項目是否與就讀科系相關"] || '是'}</small></td>
+
+                <!-- 後續延伸欄位放在後面 -->
+                <td style="background: rgba(124, 58, 237, 0.03);"><strong>${r["所屬學院"] || ''}</strong><br><small>${r["系所名稱"] || ''}</small></td>
+                <td style="background: rgba(124, 58, 237, 0.03);"><strong>${r["獲獎學生"] || ''}</strong><br><small class="text-muted">學號: ${r["學生學號"] || '未填'}</small></td>
+                <td style="background: rgba(124, 58, 237, 0.03);"><small>${r["指導老師"] || '未填'}</small></td>
+                <td style="background: rgba(124, 58, 237, 0.03);"><strong class="text-gold">NT$ ${(Number(r["獎助金金額"])||0).toLocaleString()}</strong></td>
+                <td style="background: rgba(124, 58, 237, 0.03);"><span class="badge ${statusBadgeClass}">${r["發放與領獎狀態"] || '待通知'}</span></td>
+                <td style="background: rgba(124, 58, 237, 0.03);">
+                    <a href="${r["佐證連結"] || '#'}" target="_blank" class="btn btn-secondary btn-sm" style="padding: 2px 6px; font-size: 11px;">
                         <i class="fa-solid fa-arrow-up-right-from-square"></i> 佐證
                     </a>
                 </td>
-                <td>
+                <td style="background: rgba(124, 58, 237, 0.03);">
                     <div style="display: flex; gap: 4px;">
-                        <button class="btn btn-secondary btn-sm btn-view-detail" data-id="${r["編號"]}" title="查看與編輯詳情">
+                        <button class="btn btn-secondary btn-sm btn-view-detail" data-id="${recId}" title="查看與編輯詳情">
                             <i class="fa-solid fa-eye"></i>
                         </button>
-                        <button class="btn btn-warning btn-sm btn-send-notify" data-id="${r["編號"]}" title="發送領獎通知">
+                        <button class="btn btn-warning btn-sm btn-send-notify" data-id="${recId}" title="發送領獎通知">
                             <i class="fa-solid fa-paper-plane"></i>
                         </button>
                         ${r["發放與領獎狀態"] !== '已線上簽領' && r["發放與領獎狀態"] !== '已完成撥款' ? `
-                            <button class="btn btn-success btn-sm btn-sign-claim" data-id="${r["編號"]}" title="模擬學生線上簽領">
+                            <button class="btn btn-success btn-sm btn-sign-claim" data-id="${recId}" title="模擬學生線上簽領">
                                 <i class="fa-solid fa-signature"></i>
                             </button>
                         ` : ''}
@@ -601,17 +620,45 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function handleAddAwardRecord() {
+        const nextId = allRecords.length + 1;
+        const yearVal = document.getElementById('add-year').value;
+        const deptVal = document.getElementById('add-dept').value || '護理系';
+        const deptCodeVal = document.getElementById('add-dept-code').value || (deptVal + ' - 1445');
+        const catVal = document.getElementById('add-cat').value || '全國';
+
+        let levelVal = '國內競賽';
+        if (catVal.includes('國際')) levelVal = '國際競賽';
+        else if (catVal.includes('體育')) levelVal = '體育競賽';
+        else if (catVal.includes('證照')) levelVal = '專業證照';
+
         const newRecord = {
-            "編號": allRecords.length + 1,
-            "學年度": document.getElementById('add-year').value,
-            "資料來源": document.getElementById('add-source').value,
+            // 112-114 填報模版前 16 個標準欄位
+            "識別號": String(nextId),
+            "學年度": yearVal.replace('學年度', ''),
+            "學期": document.getElementById('add-term').value || '下',
+            "活動類別": catVal,
+            "活動主辦單位": document.getElementById('add-source').value || '輔英科技大學',
+            "活動名稱": document.getElementById('add-event').value || '',
+            "競賽項目": document.getElementById('add-work').value || '',
+            "個人/團體競賽": document.getElementById('add-group-type').value || '個人競賽',
+            "人數(男)": String(document.getElementById('add-male-count').value || '0'),
+            "人數(女)": String(document.getElementById('add-female-count').value || '1'),
+            "是否獲獎": document.getElementById('add-is-awarded').value || '是',
+            "獲獎名次": document.getElementById('add-award').value || '獲獎',
+            "活動起始日期": document.getElementById('add-start-date').value || '2026-03-01',
+            "活動結束日期": document.getElementById('add-end-date').value || '2026-03-15',
+            "學生所屬系科 - 系所代碼": deptCodeVal,
+            "競賽項目是否與就讀科系相關": document.getElementById('add-dept-rel').value || '是',
+
+            // 後續延伸欄位放在後面
+            "編號": nextId,
             "所屬學院": document.getElementById('add-college').value,
-            "系所名稱": document.getElementById('add-dept').value,
-            "學制班級": document.getElementById('add-grade').value,
+            "系所名稱": deptVal,
+            "學制班級": document.getElementById('add-grade').value || '四技3年1班',
             "獲獎學生": document.getElementById('add-student').value,
             "學生學號": document.getElementById('add-stuid').value,
             "指導老師": document.getElementById('add-teacher').value || "未填寫",
-            "競賽層級": document.getElementById('add-level').value,
+            "競賽層級": document.getElementById('add-level').value || levelVal,
             "競賽或活動名稱": document.getElementById('add-event').value,
             "參賽項目或作品名稱": document.getElementById('add-work').value,
             "榮譽獎項": document.getElementById('add-award').value,
@@ -619,7 +666,7 @@ document.addEventListener('DOMContentLoaded', () => {
             "發放與領獎狀態": "待通知",
             "通知時間": "",
             "領獎截止日期": "2026-11-30",
-            "原畢業學校": document.getElementById('add-school').value || "高雄市立高雄女子高級中學",
+            "原畢業學校": document.getElementById('add-school').value || "高雄市立高雄高級中學",
             "佐證連結": document.getElementById('add-url').value || "https://www.fooyin.edu.tw/",
             "備註": "手動新增之獲獎紀錄"
         };
@@ -772,12 +819,57 @@ document.addEventListener('DOMContentLoaded', () => {
         return list;
     }
 
+    function convertToStandardExportRow(r) {
+        const deptCodeStr = r["學生所屬系科 - 系所代碼"] || (r["系所名稱"] ? (r["系所名稱"] + ' - 1445') : '護理系 - 1445');
+        const catVal = r["活動類別"] || r["競賽層級"] || '全國';
+
+        return {
+            // 112-114 學年度填報資料第 12 列前 16 個標準欄位
+            "識別號": String(r["識別號"] || r["編號"] || ''),
+            "學年度": String(r["學年度"] || '').replace(/學年度/g, '').trim(),
+            "學期": r["學期"] || "下",
+            "活動類別": catVal.includes('國際') ? '國際' : (catVal.includes('體育') ? '體育' : (catVal.includes('證照') ? '證照' : '全國')),
+            "活動主辦單位": r["活動主辦單位"] || r["資料來源"] || "輔英科技大學",
+            "活動名稱": r["活動名稱"] || r["競賽或活動名稱"] || "",
+            "競賽項目": r["競賽項目"] || r["參賽項目或作品名稱"] || "",
+            "個人/團體競賽": r["個人/團體競賽"] || "個人競賽",
+            "人數(男)": String(r["人數(男)"] !== undefined ? r["人數(男)"] : 0),
+            "人數(女)": String(r["人數(女)"] !== undefined ? r["人數(女)"] : 1),
+            "是否獲獎": r["是否獲獎"] || "是",
+            "獲獎名次": r["獲獎名次"] || r["榮譽獎項"] || "",
+            "活動起始日期": r["活動起始日期"] || r["通知時間"] || "2026-03-01",
+            "活動結束日期": r["活動結束日期"] || r["領獎截止日期"] || "2026-03-15",
+            "學生所屬系科 - 系所代碼": deptCodeStr,
+            "競賽項目是否與就讀科系相關": r["競賽項目是否與就讀科系相關"] || "是",
+
+            // 後續延伸欄位放在後面
+            "所屬學院": r["所屬學院"] || "",
+            "系所名稱": r["系所名稱"] || "",
+            "學制班級": r["學制班級"] || "",
+            "獲獎學生": r["獲獎學生"] || "",
+            "學生學號": r["學生學號"] || "",
+            "指導老師": r["指導老師"] || "",
+            "競賽層級": r["競賽層級"] || "",
+            "榮譽獎項": r["榮譽獎項"] || "",
+            "獎助金金額": Number(r["獎助金金額"] || 0),
+            "發放與領獎狀態": r["發放與領獎狀態"] || "待通知",
+            "通知時間": r["通知時間"] || "",
+            "領獎截止日期": r["領獎截止日期"] || "",
+            "原畢業學校": r["原畢業學校"] || "",
+            "佐證連結": r["佐證連結"] || "",
+            "備註": r["備註"] || ""
+        };
+    }
+
     function exportDataToCSV(filename) {
         if (!filteredRecords.length) return;
-        const keys = Object.keys(filteredRecords[0]);
+        const sampleRow = convertToStandardExportRow(filteredRecords[0]);
+        const keys = Object.keys(sampleRow);
+        
         let csvContent = "\uFEFF" + keys.join(",") + "\n";
         filteredRecords.forEach(r => {
-            const row = keys.map(k => `"${String(r[k] || '').replace(/"/g, '""')}"`).join(",");
+            const formatted = convertToStandardExportRow(r);
+            const row = keys.map(k => `"${String(formatted[k] !== undefined ? formatted[k] : '').replace(/"/g, '""')}"`).join(",");
             csvContent += row + "\n";
         });
 
@@ -790,7 +882,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function exportDataToJSON(filename) {
-        const blob = new Blob([JSON.stringify(filteredRecords, null, 2)], { type: 'application/json' });
+        const exportList = filteredRecords.map(r => convertToStandardExportRow(r));
+        const blob = new Blob([JSON.stringify(exportList, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
