@@ -1,0 +1,920 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- 防搜尋引擎與 AI 爬蟲索引保護 (GitHub Pages 掛網資安防護) -->
+    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
+    <meta name="googlebot" content="noindex, nofollow, noarchive, nosnippet">
+    <meta name="referrer" content="no-referrer">
+    <title>輔英科技大學 學生國內外獲獎紀錄管理與領獎通知系統</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700;900&family=Outfit:wght@400;600;700&display=swap"
+        rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js Library -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- SheetJS Library for .xls and .xlsx Import -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="styles.css?v=20261117_6">
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- 頂部導覽列 Header -->
+        <header class="navbar">
+            <div class="brand">
+                <div class="brand-logo">
+                    <i class="fa-solid fa-graduation-cap"></i>
+                </div>
+                <div class="brand-text">
+                    <h1>輔英科技大學</h1>
+                    <span class="sub-title">學生國內外獲獎紀錄管理與領獎通知系統 (IR Analytics &amp; Award Portal)</span>
+                </div>
+            </div>
+            <div class="header-actions">
+                <button type="button" class="btn btn-shield" id="btn-security-center"
+                    title="檢視 GitHub 掛網個資保護機制或進行管理員 AES-256 解鎖">
+                    <i class="fa-solid fa-shield-halved" id="security-btn-icon"></i>
+                    <span id="security-btn-label">個資保護中 (管理員解鎖)</span>
+                </button>
+                <button class="btn btn-purple" id="btn-diff-center" title="顯示最新行政會議、校務會議與官網公告與 112-114 填報資料之差別比對">
+                    <i class="fa-solid fa-code-compare"></i> 會議公告 vs 112-114比對
+                </button>
+                <button class="btn btn-danger" id="btn-unapplied-center" title="開啟未申請獎補助同學提醒與催辦機制">
+                    <i class="fa-solid fa-bell-concierge"></i> 未申請催辦提醒 (<span id="unapplied-badge-count">0</span>)
+                </button>
+                <button type="button" class="btn btn-outline" id="btn-import-award"
+                    title="支援所有本系統匯出格式 (.xlsx/.csv/.json) 雙向匯入與更新">
+                    <i class="fa-solid fa-file-import"></i> 匯入資料
+                </button>
+                <button type="button" class="btn btn-outline" id="btn-weekly-update"
+                    title="檢視(LOOK)個人雲端硬碟/行政會議檔案夾、學校公開網頁與系上公開網頁並執行每週自動更新">
+                    <i class="fa-solid fa-magnifying-glass-chart"></i> 來源 LOOK 與週自動更新
+                </button>
+                <button type="button" class="btn btn-warning" id="btn-batch-notify" title="一鍵批量發送所有待領獎通知">
+                    <i class="fa-solid fa-paper-plane"></i> 批量發送領獎通知
+                </button>
+                <button type="button" class="btn btn-primary" id="btn-add-award">
+                    <i class="fa-solid fa-plus"></i> 新增獲獎紀錄
+                </button>
+                <div class="dropdown">
+                    <button type="button" class="btn btn-success" id="btn-export">
+                        <i class="fa-solid fa-file-export"></i> 匯出與下載模版 <i class="fa-solid fa-chevron-down"></i>
+                    </button>
+                    <div class="dropdown-menu" id="export-menu">
+                        <a href="#" id="export-112-114-excel"><i class="fa-solid fa-file-excel"
+                                style="color:#10B981;"></i> 匯出 112-114 填報格式 (.xlsx)</a>
+                        <a href="#" id="export-112-114-csv"><i class="fa-solid fa-file-csv" style="color:#3B82F6;"></i>
+                            匯出 112-114 填報格式 (.csv)</a>
+                        <a href="#" id="download-template-file"><i class="fa-solid fa-download"
+                                style="color:#F59E0B;"></i> 下載標準匯入空白/範例模版 (.xlsx)</a>
+                        <hr style="border:0; border-top:1px solid #E2E8F0; margin:4px 0;">
+                        <a href="#" id="export-public-excel"><i class="fa-solid fa-user-shield"
+                                style="color:#0D9488;"></i> 匯出去識別化公開清冊 (.xlsx)</a>
+                        <a href="#" id="export-public-csv"><i class="fa-solid fa-user-shield"
+                                style="color:#0D9488;"></i> 匯出去識別化公開清冊 (.csv)</a>
+                        <a href="#" id="export-full-excel"><i class="fa-solid fa-table" style="color:#6D28D9;"></i>
+                            匯出完整管理清冊 (.xlsx 需解鎖)</a>
+                        <a href="#" id="export-csv"><i class="fa-solid fa-file-csv" style="color:#6D28D9;"></i> 匯出完整管理清冊
+                            (.csv 需解鎖)</a>
+                        <a href="#" id="export-json"><i class="fa-solid fa-file-code"></i> 匯出 JSON 資料庫</a>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- GitHub 掛網學生個資保密狀態橫幅 -->
+        <section class="privacy-banner locked" id="privacy-status-banner">
+            <div class="privacy-banner-text">
+                <i class="fa-solid fa-user-lock"></i>
+                <span id="privacy-banner-msg">
+                    <strong>GitHub 掛網個資保密防護已啟用：</strong>公開瀏覽預設依《個人資料保護法》執行去識別化遮罩（姓名、學號、班級、原畢業學校與雲端私密佐證均經
+                    <strong>AES-256-GCM</strong> 加密保護，前端原始碼零明文個資）。
+                </span>
+            </div>
+            <div class="privacy-banner-actions">
+                <button type="button" class="btn btn-sm btn-privacy-action" id="btn-banner-security-toggle">
+                    <i class="fa-solid fa-key"></i> 管理員授權解鎖
+                </button>
+            </div>
+        </section>
+
+        <!-- KPI 數據大屏頂部指標卡 -->
+        <section class="kpi-grid">
+            <div class="kpi-card glass">
+                <div class="kpi-icon icon-blue"><i class="fa-solid fa-trophy"></i></div>
+                <div class="kpi-info">
+                    <span class="kpi-label">全校獲獎總數</span>
+                    <h2 class="kpi-value" id="kpi-total-count">0</h2>
+                    <span class="kpi-sub">跨 112~115 學年度</span>
+                </div>
+            </div>
+            <div class="kpi-card glass">
+                <div class="kpi-icon icon-purple"><i class="fa-solid fa-earth-americas"></i></div>
+                <div class="kpi-info">
+                    <span class="kpi-label">國際競賽榮譽</span>
+                    <h2 class="kpi-value" id="kpi-intl-count">0</h2>
+                    <span class="kpi-sub" id="kpi-intl-ratio">佔 0%</span>
+                </div>
+            </div>
+            <div class="kpi-card glass">
+                <div class="kpi-icon icon-teal"><i class="fa-solid fa-certificate"></i></div>
+                <div class="kpi-info">
+                    <span class="kpi-label">國內競賽與證照</span>
+                    <h2 class="kpi-value" id="kpi-domestic-count">0</h2>
+                    <span class="kpi-sub">含技藝與專利國考</span>
+                </div>
+            </div>
+            <div class="kpi-card glass">
+                <div class="kpi-icon icon-gold"><i class="fa-solid fa-hand-holding-dollar"></i></div>
+                <div class="kpi-info">
+                    <span class="kpi-label">累積發放獎助金</span>
+                    <h2 class="kpi-value" id="kpi-scholarship-total">$0</h2>
+                    <span class="kpi-sub">新臺幣 NTD</span>
+                </div>
+            </div>
+            <div class="kpi-card glass" id="card-unapplied-kpi" style="cursor:pointer;" title="點擊查看未申請同學提醒專區">
+                <div class="kpi-icon icon-red"><i class="fa-solid fa-user-clock"></i></div>
+                <div class="kpi-info">
+                    <span class="kpi-label">未申請獎補助同學</span>
+                    <h2 class="kpi-value" id="kpi-unapplied-count" style="color:#EF4444;">0</h2>
+                    <span class="kpi-sub" id="kpi-unapplied-sub">未簽領金額: $0</span>
+                </div>
+            </div>
+            <div class="kpi-card glass" id="card-diff-kpi" style="cursor:pointer;" title="點擊檢視最新抓取與 112-114 差別比對">
+                <div class="kpi-icon icon-purple"><i class="fa-solid fa-code-compare"></i></div>
+                <div class="kpi-info">
+                    <span class="kpi-label">公開新聞 vs 填報庫比對</span>
+                    <h2 class="kpi-value" id="kpi-diff-count" style="color:#8B5CF6;">4</h2>
+                    <span class="kpi-sub" id="kpi-diff-sub">epo.fy.edu.tw 實證比對</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- 視覺化統計數據圖表區 (含學年度下拉選單) -->
+        <section class="glass" style="padding: 16px 20px; margin-bottom: 4px;">
+            <div
+                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px;">
+                <h3 style="font-size: 17px; font-weight: 700; color: var(--primary-color); margin: 0;">
+                    <i class="fa-solid fa-chart-line"></i> 視覺化數據統計與分析圖表 (IR Analytics)
+                </h3>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <label style="font-size: 13px; font-weight: 600; color: #475569;"><i
+                            class="fa-solid fa-calendar"></i> 圖表學年度篩選：</label>
+                    <select id="chart-year-filter"
+                        style="padding: 6px 12px; font-size: 13px; border-radius: 8px; border: 1px solid #CBD5E1; background: #FFF; font-weight: 600;">
+                        <option value="">全部學年度 (112~115)</option>
+                        <option value="112學年度">112學年度</option>
+                        <option value="113學年度">113學年度</option>
+                        <option value="114學年度">114學年度</option>
+                        <option value="115學年度">115學年度</option>
+                    </select>
+                </div>
+            </div>
+            <div class="charts-section">
+                <div class="chart-card glass">
+                    <div class="chart-header">
+                        <h3><i class="fa-solid fa-chart-column"></i> 各學院獲獎總數對比</h3>
+                    </div>
+                    <div class="chart-body">
+                        <canvas id="collegeChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card glass">
+                    <div class="chart-header">
+                        <h3><i class="fa-solid fa-chart-pie"></i> 競賽層級比例分佈</h3>
+                    </div>
+                    <div class="chart-body">
+                        <canvas id="levelChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card glass">
+                    <div class="chart-header">
+                        <h3><i class="fa-solid fa-tasks"></i> 學生領獎與獎助金進度</h3>
+                    </div>
+                    <div class="chart-body">
+                        <canvas id="statusChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 核心功能與資料視角切換列 -->
+        <section class="view-tabs-section glass">
+            <div class="view-tabs">
+                <button class="view-tab active" data-tab="all-awards">
+                    <i class="fa-solid fa-list-check"></i> 1. 全校獲獎紀錄總覽庫
+                </button>
+                <button class="view-tab" data-tab="template-112-114">
+                    <i class="fa-solid fa-table"></i> 2. 112-114學年度填報資料模版視角
+                </button>
+                <button class="view-tab" data-tab="crawled-meetings">
+                    <i class="fa-solid fa-globe"></i> 3. 最新行政/校務會議與官網抓取公告
+                </button>
+                <button class="view-tab" data-tab="diff-analysis">
+                    <i class="fa-solid fa-code-compare"></i> 4. 會議公告 vs 112-114 差別顯示中心
+                </button>
+                <button class="view-tab" data-tab="unapplied-reminders">
+                    <i class="fa-solid fa-bell-concierge"></i> 5. 未申請獎補助同學提醒機制專區
+                </button>
+                <button class="view-tab" data-tab="sources-lookup">
+                    <i class="fa-solid fa-cloud-arrow-down"></i> 6. 雲端硬碟/學校網頁/系上網頁 LOOK 與週更新
+                </button>
+            </div>
+        </section>
+
+        <!-- 多維度動態控制列與搜尋欄 -->
+        <section class="filter-section glass">
+            <div class="search-box">
+                <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                <input type="text" id="search-input" placeholder="全文檢索賽事名稱、作品題目、主辦單位、資料來源、指導老師（解鎖後支援完整學生姓名與學號檢索）...">
+            </div>
+            <div class="filter-controls">
+                <div class="filter-group">
+                    <label><i class="fa-solid fa-calendar"></i> 學年度</label>
+                    <select id="filter-year">
+                        <option value="">全部學年度 (112~115)</option>
+                        <option value="112學年度">112學年度</option>
+                        <option value="113學年度">113學年度</option>
+                        <option value="114學年度">114學年度</option>
+                        <option value="115學年度">115學年度</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label><i class="fa-solid fa-clock"></i> 學期</label>
+                    <select id="filter-semester">
+                        <option value="">全部學期</option>
+                        <option value="上">上學期 (第1學期)</option>
+                        <option value="下">下學期 (第2學期)</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label><i class="fa-solid fa-building-columns"></i> 所屬學院</label>
+                    <select id="filter-college">
+                        <option value="">全部學院</option>
+                        <option value="護理學院">護理學院</option>
+                        <option value="醫學與健康學院">醫學與健康學院</option>
+                        <option value="環境與生命學院">環境與生命學院</option>
+                        <option value="人文與管理學院">人文與管理學院</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label><i class="fa-solid fa-sitemap"></i> 系所名稱</label>
+                    <select id="filter-dept">
+                        <option value="">全部系所</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label><i class="fa-solid fa-layer-group"></i> 競賽層級</label>
+                    <select id="filter-level">
+                        <option value="">全部層級</option>
+                        <option value="國際競賽">國際競賽</option>
+                        <option value="國內競賽">國內競賽</option>
+                        <option value="體育競賽">體育競賽</option>
+                        <option value="專業證照">專業證照</option>
+                        <option value="特殊優良事蹟">特殊優良事蹟</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label><i class="fa-solid fa-award"></i> 領獎與發放狀態</label>
+                    <select id="filter-status">
+                        <option value="">全部狀態</option>
+                        <option value="尚待核定">尚待核定</option>
+                        <option value="無須發放">無須發放 (未獲獎)</option>
+                        <option value="待通知">待通知</option>
+                        <option value="通知已發送">通知已發送</option>
+                        <option value="已線上簽領">已線上簽領</option>
+                        <option value="已完成撥款">已完成撥款</option>
+                    </select>
+                </div>
+                <button class="btn btn-secondary" id="btn-reset-filter">
+                    <i class="fa-solid fa-rotate-left"></i> 重置篩選
+                </button>
+            </div>
+        </section>
+
+        <!-- 資料表格與分頁 -->
+        <main class="table-section glass">
+            <div class="table-header">
+                <div class="table-title">
+                    <h3><i class="fa-solid fa-list-check"></i> 獲獎與領獎紀錄清冊列表</h3>
+                    <span class="badge badge-info" id="record-count-badge">顯示 0 筆紀錄</span>
+                    <span class="badge badge-teal" id="table-privacy-badge"><i class="fa-solid fa-shield-halved"></i>
+                        個資去識別化保護中</span>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <!-- 112-114 學年度填報資料第 12 列前 16 個標準欄位 -->
+                            <th>#識別號</th>
+                            <th>學年度</th>
+                            <th>學期</th>
+                            <th>活動類別</th>
+                            <th>活動主辦單位</th>
+                            <th>活動名稱</th>
+                            <th>競賽項目</th>
+                            <th>個人/團體</th>
+                            <th>人數(男)</th>
+                            <th>人數(女)</th>
+                            <th>是否獲獎</th>
+                            <th>獲獎名次</th>
+                            <th>活動起始日期</th>
+                            <th>活動結束日期</th>
+                            <th>學生所屬系科代碼</th>
+                            <th>科系相關</th>
+                            <!-- 後續延伸欄位放在後面，最後新增「資料來源」欄位 -->
+                            <th style="background: rgba(124, 58, 237, 0.15);">所屬學院 / 系所</th>
+                            <th style="background: rgba(124, 58, 237, 0.15);">獲獎學生 (學號)</th>
+                            <th style="background: rgba(124, 58, 237, 0.15);">指導老師</th>
+                            <th style="background: rgba(124, 58, 237, 0.15);">獎助金額</th>
+                            <th style="background: rgba(124, 58, 237, 0.15);">領獎與發放狀態</th>
+                            <th style="background: rgba(124, 58, 237, 0.15);">佐證</th>
+                            <th style="background: rgba(124, 58, 237, 0.15);">功能操作</th>
+                            <th style="background: rgba(16, 185, 129, 0.18);">資料來源</th>
+                        </tr>
+                    </thead>
+                    <tbody id="table-body">
+                        <!-- 動態插入數據 -->
+                    </tbody>
+                </table>
+            </div>
+            <div class="table-footer">
+                <div class="pagination-info" id="pagination-info">載入中，請稍候...</div>
+                <div class="pagination-controls" id="pagination-controls">
+                    <!-- 動態分頁按鈕 -->
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 模態彈窗：學生個資保密與 GitHub 掛網安全中心 Modal -->
+    <div class="modal" id="security-modal">
+        <div class="modal-content glass" style="max-width: 660px;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-shield-halved"></i> 學生個資保密與 GitHub 掛網安全管理中心</h3>
+                <button class="close-btn close-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="security-arch-box">
+                    <h4 style="margin-bottom: 8px; color: var(--primary-color);"><i class="fa-solid fa-lock"></i>
+                        本系統五層縱深個資保護架構 (符合台灣個人資料保護法)</h4>
+                    <ul class="security-checklist">
+                        <li><strong>1. 公開層預設去識別化：</strong><code>data.js</code> 公開資料僅保留遮罩姓名（如
+                            <code>陳○婷</code>）、遮罩學號（<code>111****1</code>）與隱藏原畢業學校，杜絕交叉比對識別。</li>
+                        <li><strong>2. AES-256-GCM 端對端加密保險箱：</strong>敏感個資採用 <code>PBKDF2-SHA256 (150,000 次迭代)</code>
+                            衍生金鑰與 <code>AES-256-GCM</code> 驗證加密，前端原始碼無任何明文個資或密碼雜湊。</li>
+                        <li><strong>3. 記憶體暫存不落地 &amp; 閒置自動上鎖：</strong>解鎖後僅暫存於瀏覽器揮發性記憶體（絕不寫入 Cookie 或 LocalStorage），閒置 10
+                            分鐘自動清除金鑰並恢復遮罩。</li>
+                        <li><strong>4. GitHub 部署隔離與防爬蟲：</strong>GitHub Actions 僅發布靜態前端並屏蔽 <code>.json/.csv/.xls</code>
+                            原始檔，搭配 <code>noindex</code> 與嚴格 <code>CSP</code> 阻絕搜尋引擎收錄與 XSS 攻擊。</li>
+                        <li><strong>5. 雙模式匯出與權限管控：</strong>未解鎖狀態僅允許匯出去識別化公開資料，領獎催辦通知與完整個資匯出均受授權保護。</li>
+                    </ul>
+                </div>
+
+                <!-- 未解鎖狀態表單 -->
+                <div id="security-unlock-panel" style="margin-top: 16px;">
+                    <div class="form-group">
+                        <label for="admin-passphrase-input"><i class="fa-solid fa-key"></i>
+                            輸入管理員通行密碼以解密檢視完整學生資料：</label>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <input type="password" id="admin-passphrase-input" placeholder="請輸入管理員解密通行密碼..."
+                                autocomplete="off" style="flex: 1;">
+                            <button type="button" class="btn btn-secondary" id="btn-toggle-pw-eye" title="顯示/隱藏密碼"
+                                style="padding: 10px 12px;">
+                                <i class="fa-solid fa-eye"></i>
+                            </button>
+                            <button type="button" class="btn btn-primary" id="btn-confirm-unlock">
+                                <i class="fa-solid fa-unlock-keyhole"></i> 驗證解鎖
+                            </button>
+                        </div>
+                        <small id="security-auth-msg" style="margin-top: 4px; font-weight: 600;"></small>
+                    </div>
+                </div>
+
+                <!-- 已解鎖狀態面板 -->
+                <div id="security-unlocked-panel"
+                    style="display: none; margin-top: 16px; padding: 14px; border-radius: 12px; background: #FEF3C7; border: 1px solid #F59E0B;">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                        <div>
+                            <strong style="color: #B45309;"><i class="fa-solid fa-unlock"></i> 目前處於「管理員授權解鎖狀態」</strong>
+                            <p style="font-size: 13px; color: #78350F; margin-top: 4px;">
+                                完整學生姓名、學號、母校及雲端佐證已於記憶體內解密。請勿於公用電腦停留畫面。</p>
+                        </div>
+                        <button type="button" class="btn btn-danger" id="btn-lock-now">
+                            <i class="fa-solid fa-lock"></i> 立即上鎖並清除金鑰
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary close-modal">關閉視窗</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 模態彈窗：紀錄詳情 Modal -->
+    <div class="modal" id="detail-modal">
+        <div class="modal-content glass">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-circle-info"></i> 獲獎與領獎紀錄詳細資訊</h3>
+                <button class="close-btn close-modal">&times;</button>
+            </div>
+            <div class="modal-body" id="detail-modal-body">
+                <!-- 動態注入內容 -->
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary close-modal">關閉</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 模態彈窗：發送領獎通知 Modal -->
+    <div class="modal" id="notify-modal">
+        <div class="modal-content glass">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-paper-plane"></i> 發送學生領獎與獎助金通知信</h3>
+                <button class="close-btn close-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="notify-preview-box">
+                    <label><strong>發送對象:</strong> <span id="notify-target-student">--</span></label><br>
+                    <label><strong>學生學號:</strong> <span id="notify-target-stuid">--</span></label><br>
+                    <label><strong>獲獎作品:</strong> <span id="notify-target-event">--</span></label><br>
+                    <label><strong>獎助金金額:</strong> <span id="notify-target-amount" class="text-gold">--</span></label>
+                    <div class="form-group" style="margin-top: 12px;">
+                        <label>通知管道範本:</label>
+                        <select id="notify-channel-select">
+                            <option value="email">Email 官方通知信範本</option>
+                            <option value="line">LINE Notify 簡訊通知範本</option>
+                            <option value="portal">輔英校園 Portal 訊息通知範本</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin-top: 12px;">
+                        <label>通知信預覽內容:</label>
+                        <textarea id="notify-preview-text" rows="8" readonly class="text-preview"></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary close-modal">取消</button>
+                <button class="btn btn-warning" id="confirm-send-notify">
+                    <i class="fa-solid fa-paper-plane"></i> 確認發送通知
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 模態彈窗：新增獲獎紀錄 Modal -->
+    <div class="modal" id="add-modal">
+        <div class="modal-content glass">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-folder-plus"></i> 手動新增學生獲獎紀錄</h3>
+                <button class="close-btn close-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="add-award-form" class="grid-form">
+                    <!-- 112-114 填報模版前 16 個標準欄位 -->
+                    <div class="form-group">
+                        <label>1. 學年度 * <small style="color:#64748B;">(可依來源/會議時間自動推算)</small></label>
+                        <select id="add-year" required>
+                            <option value="115學年度">115學年度</option>
+                            <option value="114學年度">114學年度</option>
+                            <option value="113學年度">113學年度</option>
+                            <option value="112學年度">112學年度</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>2. 學期 * <small style="color:#64748B;">(8~1月為上、2~7月為下)</small></label>
+                        <select id="add-term" required>
+                            <option value="上">上學期</option>
+                            <option value="下">下學期</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>3. 活動類別 *</label>
+                        <select id="add-cat" required>
+                            <option value="全國">全國</option>
+                            <option value="國際(外)">國際(外)</option>
+                            <option value="大陸、港、澳地區">大陸、港、澳地區</option>
+                            <option value="教育部">教育部</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>4. 活動主辦單位 * <small style="color:#64748B;">(若無記錄請填「無」)</small></label>
+                        <input type="text" id="add-organizer" value="無" placeholder="若無記錄請填「無」" required>
+                    </div>
+                    <div class="form-group">
+                        <label>5. 活動名稱 *</label>
+                        <input type="text" id="add-event" placeholder="賽事完整名稱" required>
+                    </div>
+                    <div class="form-group">
+                        <label>6. 競賽項目 *</label>
+                        <input type="text" id="add-work" placeholder="作品題目或參賽項目" required>
+                    </div>
+                    <div class="form-group">
+                        <label>7. 個人/團體競賽 *</label>
+                        <select id="add-group-type">
+                            <option value="個人競賽">個人競賽</option>
+                            <option value="團體競賽">團體競賽</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>8. 人數(男)</label>
+                        <input type="number" id="add-male-count" value="0" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>9. 人數(女)</label>
+                        <input type="number" id="add-female-count" value="1" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>10. 是否獲獎 *</label>
+                        <select id="add-is-awarded">
+                            <option value="是">是</option>
+                            <option value="否">否</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>11. 獲獎名次 (榮譽獎項) *</label>
+                        <input type="text" id="add-award" placeholder="例如：特優、冠軍、金牌" required>
+                    </div>
+                    <div class="form-group">
+                        <label>12. 活動起始日期</label>
+                        <input type="date" id="add-start-date" value="2026-10-01">
+                    </div>
+                    <div class="form-group">
+                        <label>13. 活動結束日期</label>
+                        <input type="date" id="add-end-date" value="2026-10-15">
+                    </div>
+                    <div class="form-group">
+                        <label>14. 學生所屬系科代碼</label>
+                        <input type="text" id="add-dept-code" placeholder="例如：護理系 - 1445">
+                    </div>
+                    <div class="form-group">
+                        <label>15. 競賽項目是否與就讀科系相關</label>
+                        <select id="add-dept-rel">
+                            <option value="是">是</option>
+                            <option value="否">否</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>會議記錄時間 <small style="color:#0D9488;">(選填後自動帶入學年度與學期)</small></label>
+                        <input type="date" id="add-meeting-date" value="2026-11-11">
+                    </div>
+
+                    <!-- 後續延伸欄位放在後面 -->
+                    <div class="form-group"
+                        style="grid-column: span 2; margin-top: 10px; border-top: 1px dashed #CBD5E1; padding-top: 10px;">
+                        <span style="font-size: 13px; font-weight: 700; color: #6D28D9;"><i
+                                class="fa-solid fa-plus-circle"></i> 其餘後續延伸欄位（最後一欄為資料來源）：</span>
+                    </div>
+
+                    <div class="form-group">
+                        <label>所屬學院 *</label>
+                        <select id="add-college" required>
+                            <option value="護理學院">護理學院</option>
+                            <option value="醫學與健康學院">醫學與健康學院</option>
+                            <option value="環境與生命學院">環境與生命學院</option>
+                            <option value="人文與管理學院">人文與管理學院</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>系所名稱 *</label>
+                        <input type="text" id="add-dept" placeholder="例如：健康美容系、護理系" required>
+                    </div>
+                    <div class="form-group">
+                        <label>學制班級</label>
+                        <input type="text" id="add-grade" value="無" placeholder="無記錄請填「無」">
+                    </div>
+                    <div class="form-group">
+                        <label>獲獎學生姓名</label>
+                        <input type="text" id="add-student" value="無" placeholder="多人以頓號分隔，無記錄請填「無」">
+                    </div>
+                    <div class="form-group">
+                        <label>學生學號</label>
+                        <input type="text" id="add-stuid" value="無" placeholder="無記錄請填「無」">
+                    </div>
+                    <div class="form-group">
+                        <label>指導老師</label>
+                        <input type="text" id="add-teacher" value="無" placeholder="無記錄請填「無」">
+                    </div>
+                    <div class="form-group">
+                        <label>競賽層級 *</label>
+                        <select id="add-level" required>
+                            <option value="國際競賽">國際競賽</option>
+                            <option value="國內競賽">國內競賽</option>
+                            <option value="體育競賽">體育競賽</option>
+                            <option value="專業證照">專業證照</option>
+                            <option value="特殊優良事蹟">特殊優良事蹟</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>獎助金金額 (NTD，尚未核定請填 0)</label>
+                        <input type="number" id="add-amount" value="0" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>原畢業學校</label>
+                        <input type="text" id="add-school" value="無" placeholder="無記錄請填「無」">
+                    </div>
+                    <div class="form-group">
+                        <label>佐證連結 (Drive / 輔英官網)</label>
+                        <input type="url" id="add-url" placeholder="https://epo.fy.edu.tw/...">
+                    </div>
+                    <div class="form-group full-width">
+                        <label>資料來源 * <small style="color:#0D9488;">(輸入如 115-4行政會議 將自動校正學年度與學期)</small></label>
+                        <input type="text" id="add-data-source" list="source-suggestions" value="學校公開網頁 (輔英新聞)"
+                            placeholder="例如：115-4行政會議、學校公開網頁 (輔英新聞)、112-114學年度填報資料" required>
+                        <datalist id="source-suggestions">
+                            <option value="112-114學年度填報資料"></option>
+                            <option value="學校公開網頁 (輔英新聞)"></option>
+                            <option value="115-4行政會議"></option>
+                            <option value="115-2校務會議紀錄"></option>
+                            <option value="系上公開網頁"></option>
+                        </datalist>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary close-modal">取消</button>
+                <button class="btn btn-primary" id="confirm-add-award">儲存獲獎紀錄</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 模態彈窗：三大資料來源 LOOK 監看與每週自動更新中心 Modal -->
+    <div class="modal" id="update-log-modal">
+        <div class="modal-content glass" style="max-width: 920px;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-magnifying-glass-chart"></i> 三大資料來源 LOOK 檢視與每週自動更新中心</h3>
+                <button class="close-btn close-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div
+                    style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; padding:12px 16px; border-radius:12px; background:#EFF6FF; border:1px solid #BFDBFE;">
+                    <div>
+                        <strong style="color:#1E40AF;"><i class="fa-solid fa-clock-rotate-left"></i> 每週自動排程機制已啟用（每週一
+                            08:00 自動掃描同步）</strong>
+                        <p id="update-summary-text" style="font-size:13px; color:#334155; margin-top:4px;">
+                            自動對「個人雲端硬碟/行政會議檔案夾」、「學校公開網頁」及「系上公開網頁」進行 LOOK 檢視、差分比對與學期校正。</p>
+                    </div>
+                    <button type="button" class="btn btn-primary" id="btn-run-lookup-scan-now">
+                        <i class="fa-solid fa-arrows-rotate"></i> 立即掃描三大來源並更新
+                    </button>
+                </div>
+
+                <!-- 來源一：個人雲端硬碟 / 行政會議檔案夾 -->
+                <div class="security-arch-box" style="border-left-color:#2563EB;">
+                    <div
+                        style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
+                        <h4 style="color:#1E3A8A; margin:0;"><i class="fa-brands fa-google-drive"></i> 來源一：個人雲端硬碟
+                            ／「行政會議」檔案夾</h4>
+                        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                            <a href="https://drive.google.com/drive/my-drive" target="_blank" rel="noopener noreferrer"
+                                class="btn btn-secondary btn-sm" id="btn-look-gdrive">
+                                <i class="fa-solid fa-arrow-up-right-from-square"></i> 開啟雲端硬碟 LOOK
+                            </a>
+                            <label for="lookup-drive-folder-input" class="btn btn-primary btn-sm"
+                                style="cursor:pointer; margin:0;">
+                                <i class="fa-solid fa-folder-open"></i> 選取本機同步「行政會議」資料夾批次掃描
+                            </label>
+                            <input type="file" id="lookup-drive-folder-input" webkitdirectory directory multiple
+                                style="display:none;">
+                        </div>
+                    </div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr auto; gap:8px; align-items:center;">
+                        <input type="url" id="cfg-gdrive-url"
+                            placeholder="個人雲端硬碟『行政會議』資料夾網址 (https://drive.google.com/drive/folders/...)"
+                            style="padding:8px 10px; border-radius:8px; border:1px solid #CBD5E1; font-size:13px;">
+                        <input type="url" id="cfg-gsheet-csv-url"
+                            placeholder="選填：雲端試算表自動同步 CSV 連結 (docs.google.com/spreadsheets/.../export?format=csv)"
+                            style="padding:8px 10px; border-radius:8px; border:1px solid #CBD5E1; font-size:13px;">
+                        <button type="button" class="btn btn-success btn-sm" id="btn-save-gdrive-cfg"><i
+                                class="fa-solid fa-floppy-disk"></i> 儲存設定</button>
+                    </div>
+                    <small
+                        style="color:#64748B; display:block; margin-top:6px;">本機排程預設監看路徑：<code>./行政會議</code>、<code>G:/我的雲端硬碟/行政會議</code>（自動依檔名如
+                        <code>115-4行政會議.xlsx</code> 解析學年度與學期）。</small>
+                </div>
+
+                <!-- 來源二 & 三：學校公開網頁 & 系上公開網頁 -->
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                    <div class="security-arch-box" style="border-left-color:#0D9488;">
+                        <h4 style="color:#0F766E; margin-bottom:8px;"><i class="fa-solid fa-building-columns"></i>
+                            來源二：學校公開網頁 (官網榮譽榜/會議專區)</h4>
+                        <div id="school-sources-list"
+                            style="display:flex; flex-direction:column; gap:6px; margin-bottom:8px;"></div>
+                        <div style="display:flex; gap:6px;">
+                            <input type="text" id="new-school-src-name" placeholder="網頁名稱"
+                                style="width:38%; padding:6px 8px; border-radius:6px; border:1px solid #CBD5E1; font-size:12px;">
+                            <input type="url" id="new-school-src-url" placeholder="https://epo.fy.edu.tw/..."
+                                style="flex:1; padding:6px 8px; border-radius:6px; border:1px solid #CBD5E1; font-size:12px;">
+                            <button type="button" class="btn btn-secondary btn-sm" id="btn-add-school-src"><i
+                                    class="fa-solid fa-plus"></i></button>
+                        </div>
+                    </div>
+
+                    <div class="security-arch-box" style="border-left-color:#7C3AED;">
+                        <h4 style="color:#6D28D9; margin-bottom:8px;"><i class="fa-solid fa-sitemap"></i> 來源三：系上公開網頁
+                            (各系學生獲獎專區)</h4>
+                        <div id="dept-sources-list"
+                            style="display:flex; flex-direction:column; gap:6px; margin-bottom:8px; max-height:150px; overflow-y:auto;">
+                        </div>
+                        <div style="display:flex; gap:6px;">
+                            <input type="text" id="new-dept-src-name" placeholder="系所名稱 (如:物理治療系)"
+                                style="width:38%; padding:6px 8px; border-radius:6px; border:1px solid #CBD5E1; font-size:12px;">
+                            <input type="url" id="new-dept-src-url" placeholder="https://edpt.fy.edu.tw/..."
+                                style="flex:1; padding:6px 8px; border-radius:6px; border:1px solid #CBD5E1; font-size:12px;">
+                            <button type="button" class="btn btn-secondary btn-sm" id="btn-add-dept-src"><i
+                                    class="fa-solid fa-plus"></i></button>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <label style="font-size:13px; font-weight:700; color:#334155; margin-bottom:6px; display:block;"><i
+                            class="fa-solid fa-terminal"></i> 即時 LOOK 掃描與每週自動更新日誌：</label>
+                    <div class="log-terminal" id="update-log-terminal" style="height:145px;">
+                        準備就緒。點擊上方「立即掃描三大來源並更新」或選取「行政會議」資料夾即可開始同步...</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary close-modal">關閉視窗</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 模態彈窗：批次匯入資料 Modal (與匯出格式 100% 對稱相容) -->
+    <div class="modal" id="import-modal">
+        <div class="modal-content glass" style="max-width: 740px;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-file-import"></i> 批次匯入與同步更新獲獎紀錄 (與匯出格式 100% 相同相容)</h3>
+                <button class="close-btn close-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="notify-preview-box"
+                    style="margin-bottom: 12px; border-left: 4px solid #10B981; padding-left: 12px;">
+                    <p style="margin: 0; font-size: 13.5px; line-height: 1.55;">
+                        <strong><i class="fa-solid fa-circle-check text-green"></i> 匯入格式與匯出格式完全一致：</strong>
+                        任何由本系統「匯出」之 <code>.xlsx</code>、<code>.csv</code>、<code>.json</code>（無論是 <strong>完整管理清冊</strong>
+                        或 <strong>112-114 填報格式</strong>），修改或新增列後皆可<strong>原檔直接匯入</strong>！相同識別號會自動同步更新異動欄位，新列則自動新增入庫。
+                    </p>
+                    <div style="margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button type="button" class="btn btn-secondary btn-sm" id="btn-dl-full-template">
+                            <i class="fa-solid fa-file-excel" style="color:#10B981;"></i> 下載「完整管理清冊」匯入範例模版 (.xlsx)
+                        </button>
+                        <button type="button" class="btn btn-secondary btn-sm" id="btn-dl-112-template">
+                            <i class="fa-solid fa-download" style="color:#2563EB;"></i> 下載「112-114 填報格式」匯入範例模版 (.xlsx)
+                        </button>
+                    </div>
+                </div>
+                <div class="grid-form">
+                    <div class="form-group">
+                        <label><i class="fa-solid fa-file-arrow-up"></i> 1. 選擇單一或多個檔案 (.xlsx / .xls / .csv /
+                            .json)：</label>
+                        <input type="file" id="import-file-input" accept=".xls,.xlsx,.csv,.json" multiple>
+                    </div>
+                    <div class="form-group">
+                        <label><i class="fa-brands fa-google-drive"></i> 2. 或直接選取「行政會議」整個資料夾批次匯入：</label>
+                        <input type="file" id="import-folder-input" webkitdirectory directory multiple>
+                    </div>
+                </div>
+                <div class="form-group" style="margin-top: 10px;">
+                    <label><i class="fa-solid fa-paste"></i> 3. 或直接從 Excel 複製貼上儲存格 (TSV) / CSV / JSON 內容：</label>
+                    <textarea id="import-text-input" rows="6" placeholder="可直接從匯出的 Excel 全選複製貼上，或貼上 CSV / JSON 文字..."
+                        class="text-preview"></textarea>
+                </div>
+                <div id="import-status-msg" style="margin-top: 8px; font-weight:600;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary close-modal">取消</button>
+                <button type="button" class="btn btn-primary" id="confirm-import-data">
+                    <i class="fa-solid fa-upload"></i> 開始匯入與同步更新
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 模態彈窗：會議公告抓取 vs 112-114填報資料 比對中心 Modal -->
+    <div class="modal" id="diff-modal">
+        <div class="modal-content glass" style="max-width: 900px;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-code-compare"></i> 行政/校務會議與官網公告抓取 vs 112-114填報資料 比對中心</h3>
+                <button class="close-btn close-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="diff-summary-strip"
+                    style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 15px;">
+                    <div class="kpi-card glass" style="padding: 10px 15px;">
+                        <small style="color: #94A3B8;">最新抓取公告筆數</small>
+                        <h3 id="diff-crawled-total" style="color: #60A5FA; margin: 4px 0;">0</h3>
+                    </div>
+                    <div class="kpi-card glass" style="padding: 10px 15px;">
+                        <small style="color: #94A3B8;">與 112-114 庫相符</small>
+                        <h3 id="diff-matched-total" style="color: #34D399; margin: 4px 0;">0</h3>
+                    </div>
+                    <div class="kpi-card glass" style="padding: 10px 15px;">
+                        <small style="color: #94A3B8;">最新抓取新增榮譽</small>
+                        <h3 id="diff-new-total" style="color: #A78BFA; margin: 4px 0;">0</h3>
+                    </div>
+                    <div class="kpi-card glass" style="padding: 10px 15px;">
+                        <small style="color: #94A3B8;">欄位修訂差異項</small>
+                        <h3 id="diff-field-total" style="color: #FBBF24; margin: 4px 0;">0</h3>
+                    </div>
+                </div>
+
+                <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>差別狀態</th>
+                                <th>最新抓取資料來源</th>
+                                <th>獲獎學生</th>
+                                <th>競賽/作品名稱與榮譽</th>
+                                <th>對比差異說明</th>
+                                <th>功能操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="diff-table-body">
+                            <!-- 動態插入差別比對紀錄 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary close-modal">關閉</button>
+                <button class="btn btn-purple" id="btn-merge-all-diff">
+                    <i class="fa-solid fa-file-circle-check"></i> 一鍵採納最新會議榮譽至 112-114 庫
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 模態彈窗：未申請獎補助同學提醒機制 Modal -->
+    <div class="modal" id="unapplied-modal">
+        <div class="modal-content glass" style="max-width: 900px;">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-bell-concierge"></i> 未申請獎補助金同學催辦與提醒機制</h3>
+                <button class="close-btn close-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="notify-preview-box"
+                    style="margin-bottom: 15px; border-left: 4px solid #EF4444; padding-left: 12px;">
+                    <p style="margin: 0;">
+                        <strong><i class="fa-solid fa-triangle-exclamation text-orange"></i> 系統動態追蹤報告：</strong>
+                        全校共有 <strong id="unapplied-modal-count" class="text-orange">0</strong> 位學生獲獎但尚<strong
+                            class="text-red">未完成獎補助金線上申請/簽領</strong>，
+                        涉及金額達 <strong id="unapplied-modal-amount" class="text-gold">$0</strong> 元。
+                    </p>
+                </div>
+
+                <div style="display: flex; gap: 10px; margin-bottom: 15px; align-items: center; flex-wrap: wrap;">
+                    <label><strong>發送通知管道:</strong></label>
+                    <select id="unapplied-channel-select" class="form-control"
+                        style="width: 200px; padding: 8px; border-radius: 8px; border: 1px solid #CBD5E1;">
+                        <option value="email">Email 催辦通知信範本</option>
+                        <option value="line">LINE Notify 催辦簡訊</option>
+                        <option value="portal">輔英校園 Portal 彈窗提醒</option>
+                    </select>
+                    <button class="btn btn-warning" id="btn-batch-unapplied-remind-modal">
+                        <i class="fa-solid fa-paper-plane"></i> 一鍵發送全體未申請同學催辦提醒
+                    </button>
+                </div>
+
+                <div class="table-responsive" style="max-height: 360px; overflow-y: auto;">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>#編號</th>
+                                <th>獲獎學生 (學號)</th>
+                                <th>學院 / 系所</th>
+                                <th>賽事與作品名稱</th>
+                                <th>未簽領金額</th>
+                                <th>發放狀態</th>
+                                <th>催辦提醒操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="unapplied-table-body">
+                            <!-- 動態插入未申請同學紀錄 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary close-modal">關閉</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="data.js?v=20261117_6"></script>
+    <script src="app.js?v=20261117_6"></script>
+</body>
+
+</html>

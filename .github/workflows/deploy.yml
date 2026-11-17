@@ -1,0 +1,45 @@
+name: Deploy Secure Portal to GitHub Pages
+
+on:
+  push:
+    branches: ["main", "master"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Security Audit - Block Raw PII Files in Web Artifact
+        run: |
+          if find ./web -maxdepth 2 -type f \( -name "*.json" -o -name "*.csv" -o -name "*.xls" -o -name "*.xlsx" -o -name "*.py" -o -name "*.log" \) | grep -q .; then
+            echo "ERROR: Raw data or backend script detected in ./web directory!"
+            exit 1
+          fi
+          echo "Security check passed: Only sanitized static assets + AES-256-GCM encrypted vault present in ./web."
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Isolated Web Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './web'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,61 @@
+name: Weekly Auto-Lookup & Update Awards
+
+on:
+  schedule:
+    # 每週一台灣時間 08:00 (UTC 00:00) 自動執行三大資料來源 LOOK 與更新
+    - cron: '0 0 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  weekly-lookup-update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install cryptography openpyxl pandas xlrd
+
+      - name: Restore existing public baseline from web/data.js if local private DB absent
+        run: |
+          python -c "
+          import os, re, json
+          if not os.path.exists('fooyin_student_awards_standardized.json') and os.path.exists('web/data.js'):
+              txt = open('web/data.js', encoding='utf-8').read()
+              m = re.search(r'window\.INITIAL_AWARDS_DATA\s*=\s*(\[.*?\]);\s*// AES-256-GCM', txt, re.S)
+              if m:
+                  open('fooyin_student_awards_standardized.json', 'w', encoding='utf-8').write(m.group(1))
+          "
+
+      - name: Run Weekly Lookup (Cloud Sheet / School Public Web / Dept Public Web)
+        env:
+          FOOYIN_ADMIN_PASSPHRASE: ${{ secrets.FOOYIN_ADMIN_PASSPHRASE }}
+        run: |
+          python schedule_updater.py --run-now
+          if [ -n "$FOOYIN_ADMIN_PASSPHRASE" ]; then
+            python embed_data.py --passphrase "$FOOYIN_ADMIN_PASSPHRASE"
+          else
+            python embed_data.py --public-only
+          fi
+          python copy_to_root.py
+          rm -f fooyin_student_awards_standardized.json fooyin_student_awards_standardized.csv
+
+      - name: Commit & Push Updated Encrypted Frontend Data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add web/data.js data.js
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(weekly-update): auto-lookup & sync student awards (de-identified)"
+            git push
+          else
+            echo "No new award updates found this week."
+          fi

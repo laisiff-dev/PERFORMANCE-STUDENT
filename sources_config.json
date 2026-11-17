@@ -1,0 +1,86 @@
+{
+  "schedule": {
+    "frequency": "weekly",
+    "day_of_week": "Monday",
+    "time": "08:00",
+    "timezone": "Asia/Taipei",
+    "description": "每週一 08:00 自動掃描個人雲端硬碟/行政會議檔案夾、學校公開網頁與系上公開網頁"
+  },
+  "cloud_drive_sources": [
+    {
+      "id": "gdrive-admin-meetings",
+      "name": "個人雲端硬碟 / 行政會議檔案夾",
+      "category": "個人雲端硬碟/行政會議檔案夾",
+      "local_sync_paths": [
+        "./行政會議",
+        "G:/我的雲端硬碟/行政會議",
+        "C:/Users/User/Google Drive/行政會議"
+      ],
+      "cloud_folder_url": "https://drive.google.com/drive/my-drive",
+      "sheet_csv_url": "",
+      "enabled": true,
+      "note": "支援本機 Google 雲端硬碟同步資料夾掃描、網頁端選取整個『行政會議』資料夾批次匯入，或連結雲端試算表 CSV"
+    }
+  ],
+  "school_public_sources": [
+    {
+      "id": "fy-epo-news",
+      "name": "輔英科技大學 校園新聞與師生榮耀專區 (epo.fy.edu.tw)",
+      "category": "學校公開網頁",
+      "url": "https://epo.fy.edu.tw/p/403-1058-1306-1.php?Lang=zh-tw",
+      "enabled": true
+    },
+    {
+      "id": "fy-sec-office",
+      "name": "輔英科技大學 秘書處議事與公開專區 (ese.fy.edu.tw)",
+      "category": "學校公開網頁",
+      "url": "https://ese.fy.edu.tw/?Lang=zh-tw",
+      "enabled": true
+    },
+    {
+      "id": "fy-sports-office",
+      "name": "輔英科技大學 健康與體育發展處 (efi.fy.edu.tw)",
+      "category": "學校公開網頁",
+      "url": "https://efi.fy.edu.tw/?Lang=zh-tw",
+      "enabled": true
+    }
+  ],
+  "department_public_sources": [
+    {
+      "id": "dept-med-health-college",
+      "name": "醫學與健康學院 公開網頁 (emed-health.fy.edu.tw)",
+      "department": "健康美容系",
+      "college": "醫學與健康學院",
+      "category": "系上公開網頁",
+      "url": "https://emed-health.fy.edu.tw/",
+      "enabled": true
+    },
+    {
+      "id": "dept-pt",
+      "name": "物理治療系 系上公開網頁 (edpt.fy.edu.tw)",
+      "department": "物理治療系",
+      "college": "醫學與健康學院",
+      "category": "系上公開網頁",
+      "url": "https://edpt.fy.edu.tw/",
+      "enabled": true
+    },
+    {
+      "id": "dept-nh",
+      "name": "保健營養系 系上公開網頁 (ednh.fy.edu.tw)",
+      "department": "保健營養系",
+      "college": "醫學與健康學院",
+      "category": "系上公開網頁",
+      "url": "https://ednh.fy.edu.tw/",
+      "enabled": true
+    },
+    {
+      "id": "dept-osh",
+      "name": "職業安全衛生系 系上公開網頁 (eosh.fy.edu.tw)",
+      "department": "職業安全衛生系",
+      "college": "環境與生命學院",
+      "category": "系上公開網頁",
+      "url": "https://eosh.fy.edu.tw/",
+      "enabled": true
+    }
+  ]
+}

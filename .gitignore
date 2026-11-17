@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.log
+.DS_Store
+scratch/
+.env
+
+# 學生原始個資檔案保護（禁止上傳至公開 GitHub 儲存庫，僅發布去識別化與 AES-256-GCM 加密後之 web/data.js）
+fooyin_student_awards_standardized.json
+fooyin_student_awards_standardized.csv
+*.private.*
+*.xls
+*.xlsx
+*.pdf
+*匯出*.csv
+tmp_*.csv
+tmp_*.xlsx
