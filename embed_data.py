@@ -74,6 +74,11 @@ window.FOOYIN_DEPT_CODE_MAP = {json.dumps(FOOYIN_DEPT_CODE_MAP, ensure_ascii=Fal
     with open(data_js_path, "w", encoding="utf-8") as f:
         f.write(js_content)
 
+    root_data_js_path = os.path.join(base_dir, "data.js")
+    if os.path.exists(root_data_js_path) or os.path.exists(os.path.join(base_dir, "index.html")):
+        with open(root_data_js_path, "w", encoding="utf-8") as rf:
+            rf.write(js_content)
+
     mode_desc = "純公開去識別化模式 (不含加密保險箱)" if public_only else "去識別化公開層 + AES-256-GCM 加密保險箱模式"
     print(f"[資安封裝成功] 已將 {len(public_records)} 筆紀錄安全寫入 web/data.js ({mode_desc})")
     print("[資安稽核通過] web/data.js 零明文學生姓名與學號外洩！")

@@ -21,7 +21,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- SheetJS Library for .xls and .xlsx Import -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <link rel="stylesheet" href="styles.css?v=20261117_6">
+    <link rel="stylesheet" href="styles.css?v=20261118_1">
 </head>
 
 <body>
@@ -308,6 +308,23 @@
                     <span class="badge badge-teal" id="table-privacy-badge"><i class="fa-solid fa-shield-halved"></i>
                         個資去識別化保護中</span>
                 </div>
+                <div class="table-header-actions">
+                    <button class="btn btn-outline-danger btn-sm" id="btn-toggle-batch-delete" type="button"
+                        title="開啟多筆勾選模式，快速清除多筆錯誤匯入資料">
+                        <i class="fa-solid fa-trash-can"></i> 批次勾選刪除
+                    </button>
+                    <div class="batch-delete-bar" id="batch-delete-bar" style="display: none;">
+                        <button class="btn btn-secondary btn-sm" id="btn-batch-select-page" type="button">
+                            <i class="fa-regular fa-square-check"></i> 全選本頁
+                        </button>
+                        <button class="btn btn-danger btn-sm" id="btn-confirm-batch-delete" type="button" disabled>
+                            <i class="fa-solid fa-trash-can"></i> 刪除已選 (<span id="batch-selected-count">0</span>)
+                        </button>
+                        <button class="btn btn-secondary btn-sm" id="btn-cancel-batch-delete" type="button">
+                            取消
+                        </button>
+                    </div>
+                </div>
             </div>
             <div class="table-responsive">
                 <table class="data-table">
@@ -432,6 +449,9 @@
                 <!-- 動態注入內容 -->
             </div>
             <div class="modal-footer">
+                <button class="btn btn-danger" id="btn-detail-delete-record" type="button">
+                    <i class="fa-solid fa-trash-can"></i> 刪除此筆紀錄
+                </button>
                 <button class="btn btn-secondary close-modal">關閉</button>
             </div>
         </div>
@@ -913,8 +933,31 @@
         </div>
     </div>
 
-    <script src="data.js?v=20261117_6"></script>
-    <script src="app.js?v=20261117_6"></script>
+    <!-- 模態彈窗：刪除錯誤匯入或重複紀錄確認 Modal -->
+    <div class="modal" id="delete-confirm-modal">
+        <div class="modal-content glass" style="max-width: 560px;">
+            <div class="modal-header">
+                <h3 style="color: #DC2626;"><i class="fa-solid fa-trash-can"></i> 確認刪除獲獎紀錄</h3>
+                <button class="close-btn close-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="delete-warning-box" id="delete-confirm-summary">
+                    <!-- 動態注入待刪除紀錄摘要 -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary close-modal" type="button">取消</button>
+                <button class="btn btn-danger" id="btn-execute-delete" type="button">
+                    <i class="fa-solid fa-trash-can"></i> 確認永久刪除
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="app-toast-container" class="toast-container"></div>
+
+    <script src="data.js?v=20261118_1"></script>
+    <script src="app.js?v=20261118_1"></script>
 </body>
 
 </html>

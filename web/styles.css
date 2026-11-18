@@ -465,3 +465,121 @@ body {
 .log-terminal { background: #0F172A; color: #38BDF8; font-family: monospace; padding: 14px; border-radius: 10px; height: 180px; overflow-y: auto; font-size: 13px; }
 .text-gold { color: #D97706; font-weight: 700; }
 .text-green { color: #10B981; }
+
+/* Action Column & Delete Controls */
+.btn-outline-danger {
+    background: #FEF2F2;
+    color: #DC2626;
+    border: 1px solid #FECACA;
+}
+.btn-outline-danger:hover {
+    background: #FEE2E2;
+    border-color: #FCA5A5;
+}
+.btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    transform: none !important;
+    box-shadow: none !important;
+}
+.table-header {
+    flex-wrap: wrap;
+    gap: 12px;
+}
+.table-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.batch-delete-bar {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #FEF2F2;
+    border: 1px solid #FECACA;
+    padding: 4px 8px;
+    border-radius: 10px;
+}
+.action-btn-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+}
+.btn-delete-record {
+    padding: 6px 10px;
+    gap: 4px;
+    background: #EF4444;
+    color: #FFFFFF;
+}
+.btn-delete-record:hover {
+    background: #DC2626;
+}
+.batch-check-label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 2px 4px;
+}
+.batch-del-checkbox {
+    width: 16px;
+    height: 16px;
+    accent-color: #DC2626;
+    cursor: pointer;
+}
+.delete-warning-box {
+    background: #FEF2F2;
+    border: 1px solid #FECACA;
+    border-left: 4px solid #DC2626;
+    border-radius: 10px;
+    padding: 14px 16px;
+    color: #1E293B;
+    font-size: 14px;
+    line-height: 1.65;
+}
+.delete-record-preview-list {
+    margin-top: 10px;
+    max-height: 220px;
+    overflow-y: auto;
+    background: #FFFFFF;
+    border: 1px solid #FCA5A5;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 13px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.toast-container {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    z-index: 2000;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    pointer-events: none;
+}
+.app-toast {
+    background: #0F172A;
+    color: #FFFFFF;
+    padding: 12px 18px;
+    border-radius: 10px;
+    font-size: 13.5px;
+    font-weight: 600;
+    box-shadow: 0 10px 25px rgba(15, 23, 42, 0.25);
+    border-left: 4px solid #10B981;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    animation: toastSlideIn 0.22s ease-out;
+}
+.app-toast.toast-danger {
+    border-left-color: #EF4444;
+}
+@keyframes toastSlideIn {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+}

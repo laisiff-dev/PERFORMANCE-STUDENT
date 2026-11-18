@@ -5,7 +5,7 @@ import csv
 import argparse
 from typing import List, Dict, Any, Optional, Tuple
 
-from security_crypto import deidentify_record, deidentify_records
+from security_crypto import deidentify_record, deidentify_records, decrypt_pii_vault, DEFAULT_ADMIN_PASSPHRASE
 
 JSON_FILE = os.path.join(os.path.dirname(__file__), "fooyin_student_awards_standardized.json")
 CSV_FILE = os.path.join(os.path.dirname(__file__), "fooyin_student_awards_standardized.csv")
@@ -281,6 +281,34 @@ class FooyinAwardsManager:
                 return records
             except Exception as e:
                 print(f"[錯誤] 讀取 CSV 失敗: {e}")
+
+        # 若無本機 JSON/CSV（例如自 GitHub 下載之專案目錄），自動由 web/data.js 載入並還原加密個資保險箱
+        for candidate_js in (
+            os.path.join(os.path.dirname(__file__), "web", "data.js"),
+            os.path.join(os.path.dirname(__file__), "data.js"),
+        ):
+            if os.path.exists(candidate_js):
+                try:
+                    with open(candidate_js, "r", encoding="utf-8") as f:
+                        js_txt = f.read()
+                    m_pub = re.search(r"window\.INITIAL_AWARDS_DATA\s*=\s*(\[.*?\]);\s*(?://|window\.)", js_txt, re.S)
+                    if not m_pub:
+                        continue
+                    records = json.loads(m_pub.group(1))
+                    m_vault = re.search(r"window\.ENCRYPTED_PII_VAULT\s*=\s*(\{.*?\});\s*(?://|window\.)", js_txt, re.S)
+                    if m_vault:
+                        try:
+                            vault_obj = json.loads(m_vault.group(1))
+                            pii_map = decrypt_pii_vault(vault_obj, DEFAULT_ADMIN_PASSPHRASE)
+                            for r in records:
+                                rid = str(r.get("編號", r.get("識別號", "")))
+                                if rid in pii_map:
+                                    r.update(pii_map[rid])
+                        except Exception as ve:
+                            print(f"[提示] 無法以預設通行密碼解密 data.js 保險箱，維持公開欄位載入: {ve}")
+                    return records
+                except Exception as e:
+                    print(f"[警告] 自 {candidate_js} 載入備援資料失敗: {e}")
         return []
 
     def save_data(self):
@@ -452,6 +480,53 @@ class FooyinAwardsManager:
                 self.save_data()
                 return True
         return False
+
+    def delete_record(self, record_id: Any, custom_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """刪除單筆錯誤或重複匯入之獲獎紀錄"""
+        target_num = str(record_id if record_id is not None else "").lstrip("#").strip()
+        target_cid = str(custom_id or "").lstrip("#").strip()
+
+        if target_num:
+            for idx, r in enumerate(self.records):
+                if str(r.get("編號", "")).strip() == target_num:
+                    removed = self.records.pop(idx)
+                    self.save_data()
+                    return removed
+
+        fallback_id = target_cid or target_num
+        if fallback_id:
+            for idx, r in enumerate(self.records):
+                if str(r.get("識別號", "")).lstrip("#").strip() == fallback_id:
+                    removed = self.records.pop(idx)
+                    self.save_data()
+                    return removed
+        return None
+
+    def delete_records(self, record_ids: List[Any]) -> Dict[str, Any]:
+        """批次刪除多筆錯誤匯入之獲獎紀錄"""
+        target_set = {str(x).lstrip("#").strip() for x in record_ids if str(x).lstrip("#").strip()}
+        if not target_set:
+            return {"status": "error", "deleted_count": 0, "current_total_records": len(self.records)}
+
+        before_len = len(self.records)
+        kept = []
+        for r in self.records:
+            num_str = str(r.get("編號", "")).strip()
+            cid_str = str(r.get("識別號", "")).lstrip("#").strip()
+            if num_str in target_set or (not num_str and cid_str in target_set):
+                continue
+            kept.append(r)
+
+        deleted_count = before_len - len(kept)
+        if deleted_count > 0:
+            self.records = kept
+            self.save_data()
+
+        return {
+            "status": "success",
+            "deleted_count": deleted_count,
+            "current_total_records": len(self.records),
+        }
 
     def to_112_114_format(self, raw_r: Dict[str, Any], public_mode: bool = False) -> Dict[str, Any]:
         """將系統內部獲獎紀錄轉換為「112-114學年度填報資料」標準欄位與延伸欄位格式（最後一欄為資料來源）"""

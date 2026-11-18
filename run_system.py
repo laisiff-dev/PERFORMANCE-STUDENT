@@ -152,6 +152,29 @@ class FooyinAPIHandler(SimpleHTTPRequestHandler):
             result = mgr.import_records(records_to_import)
             build_secure_data_js(passphrase=admin_passphrase)
             self.send_json_response(result)
+        elif path == "/api/delete-award":
+            record_ids = payload.get("record_ids")
+            if isinstance(record_ids, list) and len(record_ids) > 0:
+                result = mgr.delete_records(record_ids)
+                if result.get("deleted_count", 0) > 0:
+                    build_secure_data_js(passphrase=admin_passphrase)
+                self.send_json_response(result)
+            else:
+                record_id = payload.get("record_id")
+                custom_id = payload.get("custom_id")
+                if record_id is not None or custom_id:
+                    removed = mgr.delete_record(record_id, custom_id=custom_id)
+                    if removed is not None:
+                        build_secure_data_js(passphrase=admin_passphrase)
+                        self.send_json_response({
+                            "status": "success",
+                            "deleted_count": 1,
+                            "current_total_records": len(mgr.records),
+                        })
+                    else:
+                        self.send_json_response({"status": "error", "message": "找不到指定之獲獎紀錄"}, status=404)
+                else:
+                    self.send_json_response({"status": "error", "message": "缺少 record_id 參數"}, status=400)
         else:
             self.send_json_response({"error": "找不到此 API 端點"}, status=404)
 

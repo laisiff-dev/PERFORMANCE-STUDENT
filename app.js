@@ -12,10 +12,92 @@ function initFooyinAwardsApp() {
     const PLACEHOLDER_SET = new Set(['', '無', '未填', '未填寫', '學生未填', '未公開', '未提供', 'None', 'none', 'nan', 'NaN', 'N/A', 'NA', '-', '—']);
     const INTERNAL_SOURCE_KWS = ['行政會議', '校務會議', '官方網站', '官網', '公開網站', '公開新聞', '公開網頁', '輔英新聞', '填報資料模版', '填報資料'];
 
+    // 靜態離線模式已刪除識別鍵紀錄（僅儲存不含任何學生個資之公開識別碼，確保重新整理後不復現已刪錯誤資料）
+    const STATIC_DELETED_KEYS_STORAGE = 'fooyin_deleted_static_keys_v1';
+    function loadStaticDeletedSet() {
+        try {
+            const raw = window.localStorage ? window.localStorage.getItem(STATIC_DELETED_KEYS_STORAGE) : null;
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed)) return new Set(parsed.map(String));
+            }
+        } catch (_) {}
+        return new Set();
+    }
+    const staticDeletedKeysSet = loadStaticDeletedSet();
+
+    function saveStaticDeletedSet() {
+        try {
+            if (window.localStorage) {
+                window.localStorage.setItem(STATIC_DELETED_KEYS_STORAGE, JSON.stringify([...staticDeletedKeysSet]));
+            }
+        } catch (_) {}
+    }
+
+    function makeStaticDeleteKey(r) {
+        const num = String(r["編號"] !== undefined && r["編號"] !== null ? r["編號"] : '').trim();
+        const cid = String(r["識別號"] || '').replace(/^#+/, '').trim();
+        const ev = String(r["活動名稱"] || r["競賽或活動名稱"] || '').trim();
+        return `${num}::${cid}::${ev}`;
+    }
+
+    function isStaticRecordDeleted(r) {
+        return staticDeletedKeysSet.has(makeStaticDeleteKey(r));
+    }
+
+    function markStaticRecordDeleted(r) {
+        staticDeletedKeysSet.add(makeStaticDeleteKey(r));
+        saveStaticDeletedSet();
+    }
+
+    function clearStaticRecordDeleted(r) {
+        const key = makeStaticDeleteKey(r);
+        const cid = String(r["識別號"] || '').replace(/^#+/, '').trim();
+        const ev = String(r["活動名稱"] || r["競賽或活動名稱"] || '').trim();
+        let changed = staticDeletedKeysSet.delete(key);
+        if (cid && ev) {
+            const suffix = `::${cid}::${ev}`;
+            [...staticDeletedKeysSet].forEach(k => {
+                if (k.endsWith(suffix)) {
+                    staticDeletedKeysSet.delete(k);
+                    changed = true;
+                }
+            });
+        }
+        if (changed) saveStaticDeletedSet();
+    }
+
+    function getRecordUid(r) {
+        if (r["編號"] !== undefined && r["編號"] !== null && String(r["編號"]).trim() !== '') {
+            return String(r["編號"]).trim();
+        }
+        return String(r["識別號"] || '').replace(/^#+/, '').trim();
+    }
+
+    function showToast(message, isDanger = false) {
+        const container = document.getElementById('app-toast-container');
+        if (!container) return;
+        const toast = document.createElement('div');
+        toast.className = `app-toast${isDanger ? ' toast-danger' : ''}`;
+        toast.innerHTML = `<i class="fa-solid ${isDanger ? 'fa-trash-can' : 'fa-circle-check'}"></i><span>${escapeHtml(message)}</span>`;
+        container.appendChild(toast);
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            toast.style.transition = 'opacity 0.25s ease';
+            setTimeout(() => toast.remove(), 260);
+        }, 2800);
+    }
+
     // 基礎公開去識別化資料集
     let basePublicRecords = (window.INITIAL_AWARDS_DATA && window.INITIAL_AWARDS_DATA.length > 0)
-        ? window.INITIAL_AWARDS_DATA.map(r => normalizeAwardRecord(r))
+        ? window.INITIAL_AWARDS_DATA.map(r => normalizeAwardRecord(r)).filter(r => !isStaticRecordDeleted(r))
         : [];
+
+    // 刪除與批次勾選狀態
+    let isBatchDeleteMode = false;
+    let selectedDeleteIds = new Set();
+    let pendingDeleteUids = [];
+    let activeDetailRecordId = null;
 
     // 揮發性記憶體管理員狀態（絕不寫入 localStorage / sessionStorage / Cookie）
     let isAdminUnlocked = false;
@@ -831,7 +913,9 @@ function initFooyinAwardsApp() {
         }
 
         if (window.INITIAL_AWARDS_DATA && window.INITIAL_AWARDS_DATA.length > 0) {
-            basePublicRecords = window.INITIAL_AWARDS_DATA.map(r => deidentifyRecord(normalizeAwardRecord(r)));
+            basePublicRecords = window.INITIAL_AWARDS_DATA
+                .map(r => deidentifyRecord(normalizeAwardRecord(r)))
+                .filter(r => !isStaticRecordDeleted(r));
         }
         syncEffectiveRecords();
         filteredRecords = [...allRecords];
@@ -1116,9 +1200,86 @@ function initFooyinAwardsApp() {
                 requireAdminUnlock(triggerBatchUnappliedRemind, '發送全體未申請同學催辦通知請先完成管理員解鎖。');
             });
         }
+
+        // 單筆與批次刪除事件綁定
+        const btnToggleBatchDel = document.getElementById('btn-toggle-batch-delete');
+        const btnCancelBatchDel = document.getElementById('btn-cancel-batch-delete');
+        const btnBatchSelectPage = document.getElementById('btn-batch-select-page');
+        const btnConfirmBatchDel = document.getElementById('btn-confirm-batch-delete');
+        const btnDetailDel = document.getElementById('btn-detail-delete-record');
+        const btnExecuteDel = document.getElementById('btn-execute-delete');
+
+        if (btnToggleBatchDel) {
+            btnToggleBatchDel.addEventListener('click', () => {
+                requireAdminUnlock(() => {
+                    isBatchDeleteMode = true;
+                    selectedDeleteIds.clear();
+                    updateBatchDeleteToolbar();
+                    renderTable();
+                }, '啟用批次刪除錯誤匯入資料模式請先完成管理員解鎖。');
+            });
+        }
+
+        if (btnCancelBatchDel) {
+            btnCancelBatchDel.addEventListener('click', () => {
+                isBatchDeleteMode = false;
+                selectedDeleteIds.clear();
+                updateBatchDeleteToolbar();
+                renderTable();
+            });
+        }
+
+        if (btnBatchSelectPage) {
+            btnBatchSelectPage.addEventListener('click', () => {
+                const start = (currentPage - 1) * itemsPerPage;
+                const end = Math.min(start + itemsPerPage, filteredRecords.length);
+                const pageItems = filteredRecords.slice(start, end);
+                const pageUids = pageItems.map(r => getRecordUid(r)).filter(Boolean);
+                const allSelected = pageUids.length > 0 && pageUids.every(uid => selectedDeleteIds.has(uid));
+                if (allSelected) {
+                    pageUids.forEach(uid => selectedDeleteIds.delete(uid));
+                } else {
+                    pageUids.forEach(uid => selectedDeleteIds.add(uid));
+                }
+                updateBatchDeleteToolbar();
+                renderTable();
+            });
+        }
+
+        if (btnConfirmBatchDel) {
+            btnConfirmBatchDel.addEventListener('click', () => {
+                if (selectedDeleteIds.size === 0) return;
+                requireAdminUnlock(() => {
+                    promptDeleteRecords([...selectedDeleteIds]);
+                }, '刪除獲獎紀錄涉及系統資料異動，請先完成管理員解鎖。');
+            });
+        }
+
+        if (btnDetailDel) {
+            btnDetailDel.addEventListener('click', () => {
+                if (!activeDetailRecordId) return;
+                requireAdminUnlock(() => {
+                    promptDeleteRecords([activeDetailRecordId]);
+                }, '刪除獲獎紀錄涉及系統資料異動，請先完成管理員解鎖。');
+            });
+        }
+
+        if (btnExecuteDel) {
+            btnExecuteDel.addEventListener('click', executeConfirmedDelete);
+        }
+
+        document.addEventListener('keydown', (e) => {
+            const delModal = document.getElementById('delete-confirm-modal');
+            if (e.key === 'Escape') {
+                document.querySelectorAll('.modal.show').forEach(m => m.classList.remove('show'));
+            } else if (e.key === 'Enter' && delModal && delModal.classList.contains('show')) {
+                e.preventDefault();
+                executeConfirmedDelete();
+            }
+        });
     }
 
-    function applyFilters() {
+    function applyFilters(preservePage = false) {
         const kw = searchInput.value.trim().toLowerCase();
         const yr = filterYear.value;
         const sem = filterSemester ? filterSemester.value : '';
@@ -1156,7 +1317,12 @@ function initFooyinAwardsApp() {
             return true;
         });
 
-        currentPage = 1;
+        if (preservePage === true) {
+            const maxPage = Math.max(1, Math.ceil(filteredRecords.length / itemsPerPage));
+            if (currentPage > maxPage) currentPage = maxPage;
+        } else {
+            currentPage = 1;
+        }
         renderDashboard();
     }
 
@@ -1340,7 +1506,7 @@ function initFooyinAwardsApp() {
 
             const deptCodeStr = resolveDeptCode(r["系所名稱"], r["學生所屬系科 - 系所代碼"]);
             const recId = r["識別號"] || r["編號"];
-            const rawRecordNum = r["編號"];
+            const rawRecordNum = getRecordUid(r);
 
             const organizerText = r["活動主辦單位"] || '無';
             const dataSourceText = r["資料來源"] || '無';
@@ -1389,7 +1555,12 @@ function initFooyinAwardsApp() {
                 <td style="background: rgba(124, 58, 237, 0.03);"><span class="badge ${statusBadgeClass}">${escapeHtml(r["發放與領獎狀態"] || '尚待核定')}</span></td>
                 <td style="background: rgba(124, 58, 237, 0.03);">${evidenceCellHtml}</td>
                 <td style="background: rgba(124, 58, 237, 0.03);">
-                    <div style="display: flex; gap: 4px;">
+                    <div class="action-btn-row">
+                        ${isBatchDeleteMode ? `
+                            <label class="batch-check-label" title="勾選此筆以進行批次刪除">
+                                <input type="checkbox" class="batch-del-checkbox" data-id="${escapeHtml(rawRecordNum)}" ${selectedDeleteIds.has(String(rawRecordNum)) ? 'checked' : ''}>
+                            </label>
+                        ` : ''}
                         <button class="btn btn-secondary btn-sm btn-view-detail" data-id="${escapeHtml(rawRecordNum)}" title="查看紀錄詳情">
                             <i class="fa-solid fa-eye"></i>
                         </button>
@@ -1403,6 +1574,9 @@ function initFooyinAwardsApp() {
                                 <i class="fa-solid fa-signature"></i>
                             </button>
                         ` : ''}
+                        <button class="btn btn-danger btn-sm btn-delete-record" data-id="${escapeHtml(rawRecordNum)}" title="直接刪除此筆錯誤匯入或重複資料 (需管理員解鎖)">
+                            <i class="fa-solid fa-trash-can"></i> 刪除
+                        </button>
                     </div>
                 </td>
                 <td style="background: rgba(16, 185, 129, 0.05);">
@@ -1435,6 +1609,23 @@ function initFooyinAwardsApp() {
                 requireAdminUnlock(() => handleStudentSign(targetId), '更新學生簽領狀態請先完成管理員解鎖。');
             });
         });
+        document.querySelectorAll('.btn-delete-record').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const targetId = btn.dataset.id;
+                requireAdminUnlock(() => promptDeleteRecords([targetId]), '刪除錯誤匯入或重複紀錄涉及系統資料異動，請先完成管理員解鎖。');
+            });
+        });
+        document.querySelectorAll('.batch-del-checkbox').forEach(chk => {
+            chk.addEventListener('change', (e) => {
+                const id = String(e.currentTarget.dataset.id || '');
+                if (!id) return;
+                if (e.currentTarget.checked) selectedDeleteIds.add(id);
+                else selectedDeleteIds.delete(id);
+                updateBatchDeleteToolbar();
+            });
+        });
+
+        updateBatchDeleteToolbar();
 
         // 分頁控制
         const totalPages = Math.ceil(total / itemsPerPage);
@@ -1456,8 +1647,9 @@ function initFooyinAwardsApp() {
     }
 
     function openDetailModal(recordId) {
-        const record = allRecords.find(r => String(r["編號"]) === String(recordId));
+        const record = allRecords.find(r => getRecordUid(r) === String(recordId) || String(r["編號"]) === String(recordId));
         if (!record) return;
+        activeDetailRecordId = getRecordUid(record);
 
         const evHref = safeHref(record["佐證連結"]);
         const evHtml = evHref === '#protected-evidence'
@@ -1551,7 +1743,7 @@ function initFooyinAwardsApp() {
     });
 
     async function handleStudentSign(recordId) {
-        const record = allRecords.find(r => String(r["編號"]) === String(recordId));
+        const record = allRecords.find(r => getRecordUid(r) === String(recordId) || String(r["編號"]) === String(recordId));
         if (!record) return;
         if (confirm(`確定要幫學生 [${record["獲獎學生"]}] 辦理線上簽領領獎作業？`)) {
             try {
@@ -1561,10 +1753,156 @@ function initFooyinAwardsApp() {
                     body: JSON.stringify({ record_id: recordId, status: "已線上簽領" })
                 });
             } catch (_) {}
-            const targetPub = basePublicRecords.find(r => String(r["編號"]) === String(recordId));
+            const targetPub = basePublicRecords.find(r => getRecordUid(r) === String(recordId) || String(r["編號"]) === String(recordId));
             if (targetPub) targetPub["發放與領獎狀態"] = "已線上簽領";
             syncEffectiveRecords();
-            applyFilters();
+            applyFilters(true);
+        }
+    }
+
+    // =========================================================
+    // 錯誤匯入或重複資料刪除引擎（支援單筆直接刪除與多筆勾選批次刪除）
+    // =========================================================
+    function updateBatchDeleteToolbar() {
+        const btnToggle = document.getElementById('btn-toggle-batch-delete');
+        const bar = document.getElementById('batch-delete-bar');
+        const countEl = document.getElementById('batch-selected-count');
+        const btnConfirm = document.getElementById('btn-confirm-batch-delete');
+        const btnSelectPage = document.getElementById('btn-batch-select-page');
+
+        if (!btnToggle || !bar) return;
+        if (isBatchDeleteMode) {
+            btnToggle.style.display = 'none';
+            bar.style.display = 'inline-flex';
+            const selCount = selectedDeleteIds.size;
+            if (countEl) countEl.textContent = String(selCount);
+            if (btnConfirm) btnConfirm.disabled = selCount === 0;
+
+            if (btnSelectPage) {
+                const start = (currentPage - 1) * itemsPerPage;
+                const end = Math.min(start + itemsPerPage, filteredRecords.length);
+                const pageItems = filteredRecords.slice(start, end);
+                const pageUids = pageItems.map(r => getRecordUid(r)).filter(Boolean);
+                const allSelected = pageUids.length > 0 && pageUids.every(uid => selectedDeleteIds.has(uid));
+                btnSelectPage.innerHTML = allSelected
+                    ? '<i class="fa-solid fa-square-xmark"></i> 取消本頁'
+                    : '<i class="fa-regular fa-square-check"></i> 全選本頁';
+            }
+        } else {
+            btnToggle.style.display = 'inline-flex';
+            bar.style.display = 'none';
+        }
+    }
+
+    function promptDeleteRecords(uids) {
+        const targetSet = new Set((uids || []).map(x => String(x || '').trim()).filter(Boolean));
+        if (targetSet.size === 0) return;
+
+        const targets = allRecords.filter(r => targetSet.has(getRecordUid(r)));
+        if (targets.length === 0) return;
+
+        pendingDeleteUids = targets.map(r => getRecordUid(r));
+        const summaryBox = document.getElementById('delete-confirm-summary');
+        const btnExec = document.getElementById('btn-execute-delete');
+
+        if (targets.length === 1) {
+            const r = targets[0];
+            const dispId = r["識別號"] || r["編號"];
+            const evName = r["活動名稱"] || r["競賽或活動名稱"] || '無';
+            summaryBox.innerHTML = `
+                <p style="margin-bottom: 8px; font-weight: 700; color: #991B1B;">
+                    <i class="fa-solid fa-triangle-exclamation"></i> 確定要永久刪除此筆錯誤匯入或重複之獲獎紀錄嗎？
+                </p>
+                <div class="delete-record-preview-list">
+                    <div><strong>識別號：</strong>#${escapeHtml(dispId)}</div>
+                    <div><strong>學年度 / 學期：</strong>${escapeHtml(r["學年度"] || '')} ${escapeHtml(r["學期"] || '')}學期</div>
+                    <div><strong>所屬系所：</strong>${escapeHtml(r["所屬學院"] || '')} - ${escapeHtml(r["系所名稱"] || '')}</div>
+                    <div><strong>獲獎學生：</strong>${escapeHtml(r["獲獎學生"] || '無')}（學號：${escapeHtml(r["學生學號"] || '無')}）</div>
+                    <div><strong>活動名稱：</strong>${escapeHtml(evName)}</div>
+                    <div><strong>資料來源：</strong>${escapeHtml(r["資料來源"] || '無')}</div>
+                </div>
+                <small style="display: block; margin-top: 8px; color: #64748B;">刪除後將立即同步更新清冊、KPI 指標與統計圖表，且不會納入匯出檔案。</small>
+            `;
+            if (btnExec) btnExec.innerHTML = '<i class="fa-solid fa-trash-can"></i> 確認刪除此筆紀錄';
+        } else {
+            const previewItemsHtml = targets.map(r => {
+                const dispId = r["識別號"] || r["編號"];
+                const evName = r["活動名稱"] || r["競賽或活動名稱"] || '無';
+                return `<div><strong>#${escapeHtml(dispId)}</strong>｜${escapeHtml(r["獲獎學生"] || '無')} — ${escapeHtml(evName)} <span style="color:#64748B;">(${escapeHtml(r["資料來源"] || '無')})</span></div>`;
+            }).join('');
+            summaryBox.innerHTML = `
+                <p style="margin-bottom: 8px; font-weight: 700; color: #991B1B;">
+                    <i class="fa-solid fa-triangle-exclamation"></i> 確定要一次永久刪除已勾選的 <strong>${targets.length}</strong> 筆獲獎紀錄嗎？
+                </p>
+                <div class="delete-record-preview-list">${previewItemsHtml}</div>
+                <small style="display: block; margin-top: 8px; color: #64748B;">刪除後將立即同步更新清冊、KPI 指標與統計圖表，且不會納入匯出檔案。</small>
+            `;
+            if (btnExec) btnExec.innerHTML = `<i class="fa-solid fa-trash-can"></i> 確認刪除 (${targets.length} 筆)`;
+        }
+
+        document.getElementById('delete-confirm-modal').classList.add('show');
+    }
+
+    async function executeConfirmedDelete() {
+        if (!pendingDeleteUids || pendingDeleteUids.length === 0) return;
+        const uidsToDelete = [...pendingDeleteUids];
+        pendingDeleteUids = [];
+
+        const targetSet = new Set(uidsToDelete);
+        const targetRecords = basePublicRecords.filter(r => targetSet.has(getRecordUid(r)));
+
+        document.getElementById('delete-confirm-modal').classList.remove('show');
+        document.getElementById('detail-modal').classList.remove('show');
+
+        let apiPersisted = false;
+        try {
+            const payload = uidsToDelete.length === 1
+                ? {
+                    record_id: uidsToDelete[0],
+                    custom_id: targetRecords[0] ? (targetRecords[0]["識別號"] || '') : ''
+                }
+                : { record_ids: uidsToDelete };
+
+            const resp = await fetch('/api/delete-award', {
+                method: 'POST',
+                headers: authHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify(payload)
+            });
+            if (resp.ok) {
+                apiPersisted = true;
+            }
+        } catch (_) {
+            // 靜態離線模式，改以本機靜態刪除清單記憶
+        }
+
+        if (!apiPersisted) {
+            targetRecords.forEach(r => markStaticRecordDeleted(r));
+        }
+
+        basePublicRecords = basePublicRecords.filter(r => !targetSet.has(getRecordUid(r)));
+        uidsToDelete.forEach(uid => {
+            delete sessionFullRecordsMap[uid];
+            if (decryptedPiiMap && decryptedPiiMap[uid]) {
+                delete decryptedPiiMap[uid];
+            }
+            selectedDeleteIds.delete(uid);
+        });
+
+        if (activeDetailRecordId && targetSet.has(String(activeDetailRecordId))) {
+            activeDetailRecordId = null;
+        }
+        if (isBatchDeleteMode && selectedDeleteIds.size === 0) {
+            isBatchDeleteMode = false;
+        }
+
+        syncEffectiveRecords();
+        applyFilters(true);
+
+        if (uidsToDelete.length === 1 && targetRecords[0]) {
+            const dispId = targetRecords[0]["識別號"] || targetRecords[0]["編號"];
+            showToast(`已成功刪除紀錄 #${dispId}`, true);
+        } else {
+            showToast(`已成功批次刪除 ${uidsToDelete.length} 筆紀錄`, true);
         }
     }
 
@@ -2046,6 +2384,7 @@ function initFooyinAwardsApp() {
             "原畢業學校": rawNewRecord["原畢業學校"],
             "佐證連結": rawNewRecord["佐證連結"]
         };
+        clearStaticRecordDeleted(rawNewRecord);
         basePublicRecords.unshift(deidentifyRecord(rawNewRecord));
         syncEffectiveRecords();
         applyFilters();
@@ -2301,6 +2640,7 @@ function initFooyinAwardsApp() {
                     "佐證連結": rec["佐證連結"]
                 };
             }
+            clearStaticRecordDeleted(rec);
             const pubCopy = deidentifyRecord(rec);
             basePublicRecords.unshift(pubCopy);
             byId[idKey] = pubCopy;
@@ -2863,6 +3203,7 @@ function initFooyinAwardsApp() {
             "原畢業學校": rawRec["原畢業學校"],
             "佐證連結": rawRec["佐證連結"]
         };
+        clearStaticRecordDeleted(rawRec);
         basePublicRecords.unshift(deidentifyRecord(rawRec));
         syncEffectiveRecords();
         applyFilters();
