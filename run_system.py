@@ -135,14 +135,30 @@ class FooyinAPIHandler(SimpleHTTPRequestHandler):
             self.send_json_response(result)
         elif path == "/api/update-status":
             record_id = payload.get("record_id")
-            new_status = payload.get("status")
-            if record_id and new_status:
-                success = mgr.update_status(int(record_id), new_status)
+            new_status = payload.get("status", "")
+            raw_amount = payload.get("amount")
+            notify_time = payload.get("notify_time")
+            amt_val = int(raw_amount) if raw_amount is not None and str(raw_amount).strip() != "" else None
+            if record_id is not None and (new_status or amt_val is not None):
+                success = mgr.update_status(record_id, new_status, notify_time=notify_time, amount=amt_val)
                 if success:
                     build_secure_data_js(passphrase=admin_passphrase)
                 self.send_json_response({"status": "success" if success else "error"})
             else:
                 self.send_json_response({"status": "error", "message": "缺少必要參數"}, status=400)
+        elif path == "/api/update-award":
+            record_id = payload.get("record_id")
+            custom_id = payload.get("custom_id")
+            updates = payload.get("updates", {})
+            if (record_id is not None or custom_id) and isinstance(updates, dict):
+                updated_rec = mgr.update_record(record_id, updates, custom_id=custom_id)
+                if updated_rec is not None:
+                    build_secure_data_js(passphrase=admin_passphrase)
+                    self.send_json_response({"status": "success", "record": updated_rec})
+                else:
+                    self.send_json_response({"status": "error", "message": "找不到指定之獲獎紀錄"}, status=404)
+            else:
+                self.send_json_response({"status": "error", "message": "缺少必要更新參數"}, status=400)
         elif path == "/api/add-award":
             new_rec = mgr.add_record(payload)
             build_secure_data_js(passphrase=admin_passphrase)

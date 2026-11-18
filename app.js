@@ -67,6 +67,51 @@ function initFooyinAwardsApp() {
         if (changed) saveStaticDeletedSet();
     }
 
+    // 靜態離線模式已修訂欄位快取（嚴格僅儲存去識別化後之公開欄位與核定金額/領獎狀態，絕不寫入任何明文個資）
+    const STATIC_EDITED_PATCHES_STORAGE = 'fooyin_edited_public_patches_v1';
+    function loadStaticEditedPatches() {
+        try {
+            const raw = window.localStorage ? window.localStorage.getItem(STATIC_EDITED_PATCHES_STORAGE) : null;
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+            }
+        } catch (_) {}
+        return {};
+    }
+    const staticEditedPatchesMap = loadStaticEditedPatches();
+
+    function saveStaticEditedPatches() {
+        try {
+            if (window.localStorage) {
+                window.localStorage.setItem(STATIC_EDITED_PATCHES_STORAGE, JSON.stringify(staticEditedPatchesMap));
+            }
+        } catch (_) {}
+    }
+
+    function applyStaticEditedPatch(rec) {
+        const uid = getRecordUid(rec);
+        if (uid && staticEditedPatchesMap[uid]) {
+            return { ...rec, ...deidentifyRecord(staticEditedPatchesMap[uid]), "編號": rec["編號"] };
+        }
+        return rec;
+    }
+
+    function persistStaticEditedPatch(rec) {
+        const uid = getRecordUid(rec);
+        if (!uid) return;
+        staticEditedPatchesMap[uid] = deidentifyRecord(rec);
+        saveStaticEditedPatches();
+    }
+
+    function removeStaticEditedPatch(uid) {
+        const key = String(uid || '').trim();
+        if (key && staticEditedPatchesMap[key]) {
+            delete staticEditedPatchesMap[key];
+            saveStaticEditedPatches();
+        }
+    }
+
     function getRecordUid(r) {
         if (r["編號"] !== undefined && r["編號"] !== null && String(r["編號"]).trim() !== '') {
             return String(r["編號"]).trim();
@@ -90,14 +135,17 @@ function initFooyinAwardsApp() {
 
     // 基礎公開去識別化資料集
     let basePublicRecords = (window.INITIAL_AWARDS_DATA && window.INITIAL_AWARDS_DATA.length > 0)
-        ? window.INITIAL_AWARDS_DATA.map(r => normalizeAwardRecord(r)).filter(r => !isStaticRecordDeleted(r))
+        ? window.INITIAL_AWARDS_DATA.map(r => applyStaticEditedPatch(normalizeAwardRecord(r))).filter(r => !isStaticRecordDeleted(r))
         : [];
 
-    // 刪除與批次勾選狀態
+    // 刪除、批次勾選與列內快速核定編輯狀態
     let isBatchDeleteMode = false;
     let selectedDeleteIds = new Set();
     let pendingDeleteUids = [];
     let activeDetailRecordId = null;
+    let detailModalRenderedUnlocked = false;
+    let editingQuickRowUid = null;
+    let editingQuickFocusField = 'amt';
 
     // 揮發性記憶體管理員狀態（絕不寫入 localStorage / sessionStorage / Cookie）
     let isAdminUnlocked = false;
@@ -346,7 +394,7 @@ function initFooyinAwardsApp() {
         return '國內競賽';
     }
 
-    function normalizeAwardRecord(rawRecord) {
+    function normalizeAwardRecord(rawRecord, preserveExplicitYearTerm = false) {
         const r = { ...rawRecord };
         const rawOrg = String(r["活動主辦單位"] || '').trim();
         let rawSrc = String(r["資料來源"] || '').trim();
@@ -378,13 +426,20 @@ function initFooyinAwardsApp() {
         }
         r["學生所屬系科 - 系所代碼"] = resolveDeptCode(r["系所名稱"], r["學生所屬系科 - 系所代碼"]);
 
-        if (!r["競賽層級"] || !['國際競賽', '國內競賽', '體育競賽', '專業證照'].includes(r["競賽層級"])) {
+        if (!r["競賽層級"] || !['國際競賽', '國內競賽', '體育競賽', '專業證照', '特殊優良事蹟'].includes(r["競賽層級"])) {
             r["競賽層級"] = classifyCompetitionLevel(r["活動類別"], r["活動名稱"] || r["競賽或活動名稱"], r["競賽項目"] || r["參賽項目或作品名稱"], normalizedOrg);
         }
 
-        const inferred = inferYearAndSemester(r);
-        r["學年度"] = inferred.year;
-        r["學期"] = inferred.term;
+        const explicitYr = String(r["學年度"] || '').replace(/學年度/g, '').trim();
+        const explicitTm = String(r["學期"] || '').trim();
+        if (preserveExplicitYearTerm && explicitYr && (explicitTm === '上' || explicitTm === '下')) {
+            r["學年度"] = `${explicitYr}學年度`;
+            r["學期"] = explicitTm;
+        } else {
+            const inferred = inferYearAndSemester(r);
+            r["學年度"] = inferred.year;
+            r["學期"] = inferred.term;
+        }
         return r;
     }
 
@@ -794,7 +849,7 @@ function initFooyinAwardsApp() {
             syncEffectiveRecords();
             startAutoLockCountdown();
             updateSecurityUI();
-            applyFilters();
+            applyFilters(true);
 
             setTimeout(() => {
                 document.getElementById('security-modal').classList.remove('show');
@@ -835,7 +890,7 @@ function initFooyinAwardsApp() {
 
         syncEffectiveRecords();
         updateSecurityUI();
-        applyFilters();
+        applyFilters(true);
 
         if (isAuto) {
             alert('因閒置超過 10 分鐘，系統已自動清除記憶體解密金鑰並恢復學生個資遮罩保護。');
@@ -914,7 +969,7 @@ function initFooyinAwardsApp() {
 
         if (window.INITIAL_AWARDS_DATA && window.INITIAL_AWARDS_DATA.length > 0) {
             basePublicRecords = window.INITIAL_AWARDS_DATA
-                .map(r => deidentifyRecord(normalizeAwardRecord(r)))
+                .map(r => deidentifyRecord(applyStaticEditedPatch(normalizeAwardRecord(r))))
                 .filter(r => !isStaticRecordDeleted(r));
         }
         syncEffectiveRecords();
@@ -1207,6 +1262,7 @@ function initFooyinAwardsApp() {
         const btnBatchSelectPage = document.getElementById('btn-batch-select-page');
         const btnConfirmBatchDel = document.getElementById('btn-confirm-batch-delete');
         const btnDetailDel = document.getElementById('btn-detail-delete-record');
+        const btnDetailSave = document.getElementById('btn-detail-save-record');
         const btnExecuteDel = document.getElementById('btn-execute-delete');
 
         if (btnToggleBatchDel) {
@@ -1262,6 +1318,10 @@ function initFooyinAwardsApp() {
                     promptDeleteRecords([activeDetailRecordId]);
                 }, '刪除獲獎紀錄涉及系統資料異動，請先完成管理員解鎖。');
             });
+        }
+
+        if (btnDetailSave) {
+            btnDetailSave.addEventListener('click', handleSaveDetailModal);
         }
 
         if (btnExecuteDel) {
@@ -1517,9 +1577,32 @@ function initFooyinAwardsApp() {
             const isAwarded = String(r["是否獲獎"] || '是').trim() !== '否';
             const amtNum = Number(r["獎助金金額"]) || 0;
 
-            const amtHtml = amtNum > 0
-                ? `<strong class="text-gold">NT$ ${amtNum.toLocaleString()}</strong>`
-                : `<small class="text-muted">${isAwarded ? '尚待核定' : '無'}</small>`;
+            const isInlineEditing = String(editingQuickRowUid || '') === String(rawRecordNum);
+            const curStatus = r["發放與領獎狀態"] || (isAwarded ? '尚待核定' : '無須發放');
+            const statusOptions = ['尚待核定', '待通知', '通知已發送', '已線上簽領', '已完成撥款', '無須發放'];
+
+            const amtHtml = isInlineEditing
+                ? `<div class="inline-amt-wrap">
+                       <span class="inline-ntd-prefix">NT$</span>
+                       <input type="number" class="inline-amt-input" id="quick-amt-${escapeHtml(rawRecordNum)}" data-id="${escapeHtml(rawRecordNum)}" value="${amtNum}" min="0" step="500" placeholder="金額">
+                   </div>`
+                : (amtNum > 0
+                    ? `<button type="button" class="quick-cell-btn has-amt btn-quick-edit-amt" data-id="${escapeHtml(rawRecordNum)}" title="點擊核定或修改獎助金額並送出"><span class="text-gold">NT$ ${amtNum.toLocaleString()}</span> <i class="fa-solid fa-pen-to-square"></i></button>`
+                    : `<button type="button" class="quick-cell-btn btn-quick-edit-amt" data-id="${escapeHtml(rawRecordNum)}" title="點擊核定獎助金額並送出"><span>${isAwarded ? '尚待核定' : '無'}</span> <i class="fa-solid fa-pen-to-square"></i></button>`);
+
+            const statusHtml = isInlineEditing
+                ? `<div class="inline-status-wrap">
+                       <select class="inline-status-select" id="quick-status-${escapeHtml(rawRecordNum)}" data-id="${escapeHtml(rawRecordNum)}">
+                           ${statusOptions.map(stOpt => `<option value="${escapeHtml(stOpt)}" ${curStatus === stOpt ? 'selected' : ''}>${escapeHtml(stOpt)}</option>`).join('')}
+                       </select>
+                       <button type="button" class="btn btn-sm btn-quick-save" data-id="${escapeHtml(rawRecordNum)}" title="送出儲存獎助金額與領獎狀態">
+                           <i class="fa-solid fa-check"></i> 送出
+                       </button>
+                       <button type="button" class="btn btn-secondary btn-sm btn-quick-cancel" data-id="${escapeHtml(rawRecordNum)}" title="取消編輯">
+                           <i class="fa-solid fa-xmark"></i>
+                       </button>
+                   </div>`
+                : `<button type="button" class="badge ${statusBadgeClass} quick-status-btn btn-quick-edit-status" data-id="${escapeHtml(rawRecordNum)}" title="點擊變更領獎與發放狀態並送出">${escapeHtml(curStatus)} <i class="fa-solid fa-caret-down"></i></button>`;
 
             const evidenceCellHtml = isProtectedEvidence
                 ? `<button class="btn btn-secondary btn-sm btn-unlock-evidence" data-id="${escapeHtml(rawRecordNum)}" style="padding: 2px 6px; font-size: 11px;" title="雲端佐證含個資，需管理員解鎖檢視"><i class="fa-solid fa-lock"></i> 受保護</button>`
@@ -1552,7 +1635,7 @@ function initFooyinAwardsApp() {
                 </td>
                 <td style="background: rgba(124, 58, 237, 0.03);"><small>${escapeHtml(r["指導老師"] || '無')}</small></td>
                 <td style="background: rgba(124, 58, 237, 0.03);">${amtHtml}</td>
-                <td style="background: rgba(124, 58, 237, 0.03);"><span class="badge ${statusBadgeClass}">${escapeHtml(r["發放與領獎狀態"] || '尚待核定')}</span></td>
+                <td style="background: rgba(124, 58, 237, 0.03);">${statusHtml}</td>
                 <td style="background: rgba(124, 58, 237, 0.03);">${evidenceCellHtml}</td>
                 <td style="background: rgba(124, 58, 237, 0.03);">
                     <div class="action-btn-row">
@@ -1561,20 +1644,20 @@ function initFooyinAwardsApp() {
                                 <input type="checkbox" class="batch-del-checkbox" data-id="${escapeHtml(rawRecordNum)}" ${selectedDeleteIds.has(String(rawRecordNum)) ? 'checked' : ''}>
                             </label>
                         ` : ''}
-                        <button class="btn btn-secondary btn-sm btn-view-detail" data-id="${escapeHtml(rawRecordNum)}" title="查看紀錄詳情">
-                            <i class="fa-solid fa-eye"></i>
+                        <button type="button" class="btn btn-secondary btn-sm btn-view-detail" data-id="${escapeHtml(rawRecordNum)}" title="查看紀錄詳情與編輯修正">
+                            <i class="fa-solid fa-pen-to-square"></i> 詳情/修正
                         </button>
                         ${isAwarded && r["發放與領獎狀態"] !== '無須發放' ? `
-                            <button class="btn btn-warning btn-sm btn-send-notify" data-id="${escapeHtml(rawRecordNum)}" title="發送領獎通知 (需管理員解鎖)">
+                            <button type="button" class="btn btn-warning btn-sm btn-send-notify" data-id="${escapeHtml(rawRecordNum)}" title="發送領獎通知 (需管理員解鎖)">
                                 <i class="fa-solid fa-paper-plane"></i>
                             </button>
                         ` : ''}
                         ${isAwarded && !['已線上簽領', '已完成撥款', '無須發放'].includes(r["發放與領獎狀態"]) ? `
-                            <button class="btn btn-success btn-sm btn-sign-claim" data-id="${escapeHtml(rawRecordNum)}" title="辦理線上簽領 (需管理員解鎖)">
+                            <button type="button" class="btn btn-success btn-sm btn-sign-claim" data-id="${escapeHtml(rawRecordNum)}" title="辦理線上簽領 (需管理員解鎖)">
                                 <i class="fa-solid fa-signature"></i>
                             </button>
                         ` : ''}
-                        <button class="btn btn-danger btn-sm btn-delete-record" data-id="${escapeHtml(rawRecordNum)}" title="直接刪除此筆錯誤匯入或重複資料 (需管理員解鎖)">
+                        <button type="button" class="btn btn-danger btn-sm btn-delete-record" data-id="${escapeHtml(rawRecordNum)}" title="直接刪除此筆錯誤匯入或重複資料 (需管理員解鎖)">
                             <i class="fa-solid fa-trash-can"></i> 刪除
                         </button>
                     </div>
@@ -1586,6 +1669,67 @@ function initFooyinAwardsApp() {
             `;
             tableBody.appendChild(tr);
         });
+
+        // 綁定列內獎助金額與領獎狀態快速編輯按鈕
+        document.querySelectorAll('.btn-quick-edit-amt').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const targetId = String(btn.dataset.id || '');
+                requireAdminUnlock(() => {
+                    editingQuickRowUid = targetId;
+                    editingQuickFocusField = 'amt';
+                    renderTable();
+                }, '核定或修改獎助金額涉及系統資料異動，請先完成管理員解鎖。');
+            });
+        });
+        document.querySelectorAll('.btn-quick-edit-status').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const targetId = String(btn.dataset.id || '');
+                requireAdminUnlock(() => {
+                    editingQuickRowUid = targetId;
+                    editingQuickFocusField = 'status';
+                    renderTable();
+                }, '變更領獎與發放狀態涉及系統資料異動，請先完成管理員解鎖。');
+            });
+        });
+        document.querySelectorAll('.btn-quick-cancel').forEach(btn => {
+            btn.addEventListener('click', () => {
+                editingQuickRowUid = null;
+                renderTable();
+            });
+        });
+        document.querySelectorAll('.btn-quick-save').forEach(btn => {
+            btn.addEventListener('click', () => {
+                saveQuickRowEdit(String(btn.dataset.id || ''));
+            });
+        });
+
+        if (editingQuickRowUid) {
+            const amtEl = document.getElementById(`quick-amt-${editingQuickRowUid}`);
+            const stEl = document.getElementById(`quick-status-${editingQuickRowUid}`);
+            let statusManuallyChanged = false;
+            if (stEl) {
+                stEl.addEventListener('change', () => { statusManuallyChanged = true; });
+                stEl.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); saveQuickRowEdit(editingQuickRowUid); }
+                });
+            }
+            if (amtEl) {
+                amtEl.addEventListener('input', () => {
+                    const v = Number(amtEl.value || 0);
+                    if (!statusManuallyChanged && stEl && v > 0 && stEl.value === '尚待核定') {
+                        stEl.value = '待通知';
+                    }
+                });
+                amtEl.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); saveQuickRowEdit(editingQuickRowUid); }
+                });
+            }
+            const focusEl = editingQuickFocusField === 'status' ? stEl : amtEl;
+            if (focusEl && typeof focusEl.focus === 'function') {
+                focusEl.focus();
+                if (focusEl === amtEl && typeof amtEl.select === 'function') amtEl.select();
+            }
+        }
 
         // 綁定操作按鈕
         document.querySelectorAll('.btn-unlock-evidence').forEach(btn => {
@@ -1646,53 +1790,454 @@ function initFooyinAwardsApp() {
         }
     }
 
+    function isMaskedPiiString(val) {
+        const s = String(val || '').trim();
+        return s.includes('○') || s.includes('*') || s.includes('已去識別化') || s === '#protected-evidence';
+    }
+
+    async function commitRecordUpdates(recordUid, updatesObj, preserveExplicitYearTerm = true) {
+        const uidStr = String(recordUid || '').trim();
+        const targetPub = basePublicRecords.find(r => getRecordUid(r) === uidStr || String(r["編號"]) === uidStr);
+        if (!targetPub) return null;
+
+        const idKey = String(targetPub["編號"] || targetPub["識別號"] || uidStr);
+        const existingFullPii = {
+            ...(decryptedPiiMap && decryptedPiiMap[idKey] ? decryptedPiiMap[idKey] : {}),
+            ...(sessionFullRecordsMap[idKey] ? sessionFullRecordsMap[idKey] : {})
+        };
+
+        const merged = { ...targetPub, ...existingFullPii };
+        Object.entries(updatesObj || {}).forEach(([k, v]) => {
+            if (k === '編號' || v === undefined || v === null) return;
+            if (['獲獎學生', '學生學號', '學制班級', '原畢業學校', '佐證連結'].includes(k)) {
+                if (isMaskedPiiString(v) && existingFullPii[k] !== undefined) {
+                    merged[k] = existingFullPii[k];
+                    return;
+                }
+            }
+            merged[k] = v;
+        });
+
+        // 雙向同步別名欄位與系所代碼
+        const ev = String(updatesObj["活動名稱"] !== undefined ? updatesObj["活動名稱"] : (merged["活動名稱"] || merged["競賽或活動名稱"] || '')).trim();
+        merged["活動名稱"] = ev;
+        merged["競賽或活動名稱"] = ev;
+
+        const wk = String(updatesObj["競賽項目"] !== undefined ? updatesObj["競賽項目"] : (merged["競賽項目"] || merged["參賽項目或作品名稱"] || '')).trim();
+        merged["競賽項目"] = wk;
+        merged["參賽項目或作品名稱"] = wk;
+
+        const rk = String(updatesObj["獲獎名次"] !== undefined ? updatesObj["獲獎名次"] : (merged["獲獎名次"] || merged["榮譽獎項"] || '')).trim();
+        merged["獲獎名次"] = rk;
+        merged["榮譽獎項"] = rk;
+
+        const deptName = String(merged["系所名稱"] || '').trim();
+        if (deptName && window.FOOYIN_DEPT_CODE_MAP && window.FOOYIN_DEPT_CODE_MAP[deptName]) {
+            merged["學生所屬系科 - 系所代碼"] = window.FOOYIN_DEPT_CODE_MAP[deptName];
+        }
+        merged["獎助金金額"] = Math.max(0, Number(merged["獎助金金額"] || 0));
+
+        const normalizedFull = normalizeAwardRecord(merged, preserveExplicitYearTerm);
+        normalizedFull["編號"] = targetPub["編號"];
+
+        sessionFullRecordsMap[idKey] = {
+            "獲獎學生": normalizedFull["獲獎學生"] || '無',
+            "學生學號": normalizedFull["學生學號"] || '無',
+            "學制班級": normalizedFull["學制班級"] || '無',
+            "原畢業學校": normalizedFull["原畢業學校"] || '無',
+            "佐證連結": normalizedFull["佐證連結"] || '無'
+        };
+
+        try {
+            await fetch('/api/update-award', {
+                method: 'POST',
+                headers: authHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({
+                    record_id: targetPub["編號"],
+                    custom_id: targetPub["識別號"] || '',
+                    updates: normalizedFull
+                })
+            });
+        } catch (_) {}
+
+        const deidCopy = deidentifyRecord(normalizedFull);
+        Object.assign(targetPub, deidCopy);
+        persistStaticEditedPatch(targetPub);
+
+        syncEffectiveRecords();
+        applyFilters(true);
+        return normalizedFull;
+    }
+
+    async function saveQuickRowEdit(recordUid) {
+        const uidStr = String(recordUid || '').trim();
+        if (!uidStr) return;
+        const amtEl = document.getElementById(`quick-amt-${uidStr}`);
+        const stEl = document.getElementById(`quick-status-${uidStr}`);
+        const newAmt = Math.max(0, Number(amtEl ? amtEl.value : 0) || 0);
+        const newStatus = stEl ? stEl.value : '尚待核定';
+        const todayStr = new Date().toISOString().split('T')[0];
+
+        const updates = {
+            "獎助金金額": newAmt,
+            "發放與領獎狀態": newStatus
+        };
+        if (newStatus === '通知已發送') {
+            const curRec = allRecords.find(r => getRecordUid(r) === uidStr);
+            if (curRec && !curRec["通知時間"]) updates["通知時間"] = todayStr;
+        }
+
+        editingQuickRowUid = null;
+        const saved = await commitRecordUpdates(uidStr, updates, true);
+        if (saved) {
+            const dispId = saved["識別號"] || saved["編號"];
+            showToast(`已送出更新 #${dispId}：獎助金 NT$ ${newAmt.toLocaleString()} ／ 狀態「${newStatus}」`);
+        }
+    }
+
     function openDetailModal(recordId) {
         const record = allRecords.find(r => getRecordUid(r) === String(recordId) || String(r["編號"]) === String(recordId));
         if (!record) return;
         activeDetailRecordId = getRecordUid(record);
+        detailModalRenderedUnlocked = isAdminUnlocked;
 
         const evHref = safeHref(record["佐證連結"]);
-        const evHtml = evHref === '#protected-evidence'
-            ? `<span class="badge badge-warning"><i class="fa-solid fa-lock"></i> 雲端佐證已加密保護 (請點選右上角管理員解鎖檢視)</span>`
-            : (evHref !== '#'
-                ? `<a href="${escapeHtml(evHref)}" target="_blank" rel="noopener noreferrer">${escapeHtml(evHref)}</a>`
-                : `<span class="text-muted">無</span>`);
-
         const amtNum = Number(record["獎助金金額"]) || 0;
         const isAwarded = String(record["是否獲獎"] || '是').trim() !== '否';
-        const amtDetailText = amtNum > 0
-            ? `<span class="text-gold">NT$ ${amtNum.toLocaleString()} 元</span>`
-            : `<span class="text-muted">${isAwarded ? '尚待核定 (NT$ 0)' : '無須發放 (未獲獎)'}</span>`;
+        const curYear = String(record["學年度"] || '114學年度').includes('學年度')
+            ? String(record["學年度"])
+            : `${String(record["學年度"]).trim() || '114'}學年度`;
+        const curTerm = String(record["學期"] || '上').trim() === '下' ? '下' : '上';
+        const curCat = String(record["活動類別"] || '全國').trim();
+        const curLevel = String(record["競賽層級"] || '國內競賽').trim();
+        const curStatus = String(record["發放與領獎狀態"] || (isAwarded ? '尚待核定' : '無須發放')).trim();
+        const curCollege = String(record["所屬學院"] || '護理學院').trim();
+        const curGroup = String(record["個人/團體競賽"] || '個人競賽').trim();
+        const curDeptRel = String(record["競賽項目是否與就讀科系相關"] || '是').trim() === '否' ? '否' : '是';
+
+        const catBaseOpts = ['全國', '國際(外)', '大陸、港、澳地區', '教育部'];
+        if (curCat && !catBaseOpts.includes(curCat)) catBaseOpts.unshift(curCat);
+        const levelOpts = ['國際競賽', '國內競賽', '體育競賽', '專業證照', '特殊優良事蹟'];
+        const statusOpts = ['尚待核定', '待通知', '通知已發送', '已線上簽領', '已完成撥款', '無須發放'];
+        const collegeOpts = ['護理學院', '醫學與健康學院', '環境與生命學院', '人文與管理學院'];
+        const allDepts = Object.keys(window.FOOYIN_DEPT_CODE_MAP || {});
+
+        const piiReadonlyAttr = isAdminUnlocked ? '' : 'readonly';
+        const piiReadonlyClass = isAdminUnlocked ? '' : 'input-locked-readonly';
+        const piiLockHint = isAdminUnlocked ? '' : ' <small style="color:#D97706;">(解鎖後可修改)</small>';
+
+        const unlockStripHtml = isAdminUnlocked
+            ? `<div class="detail-unlock-strip unlocked">
+                   <span><i class="fa-solid fa-unlock-keyhole"></i> <strong>管理員完整編輯模式：</strong>所有欄位（含學生姓名、學號、獎助金額與領獎狀態）皆可直接修正並點選下方「儲存修正並送出」。</span>
+                   <span class="badge badge-teal">流水號 #${escapeHtml(record["編號"])}</span>
+               </div>`
+            : `<div class="detail-unlock-strip locked">
+                   <span><i class="fa-solid fa-shield-halved"></i> <strong>目前為去識別化檢視：</strong>您可直接核定獎助金額、領獎狀態與賽事欄位後按「儲存修正並送出」（系統將驗證管理員密碼）；若需修改學生姓名或學號請先點選右側解鎖。</span>
+                   <button type="button" class="btn btn-warning btn-sm" id="btn-detail-unlock-pii">
+                       <i class="fa-solid fa-key"></i> 解鎖編輯完整個資
+                   </button>
+               </div>`;
+
+        const evLinkActionHtml = (evHref !== '#' && evHref !== '#protected-evidence')
+            ? `<a href="${escapeHtml(evHref)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="margin-top:4px; align-self:flex-start;"><i class="fa-solid fa-arrow-up-right-from-square"></i> 開啟目前佐證網址</a>`
+            : (evHref === '#protected-evidence'
+                ? `<small style="color:#D97706;"><i class="fa-solid fa-lock"></i> 雲端硬碟佐證已加密保護，解鎖後自動顯示真實網址</small>`
+                : '');
 
         const body = document.getElementById('detail-modal-body');
         body.innerHTML = `
-            <div class="notify-preview-box" style="display:flex; flex-direction:column; gap:8px;">
-                <p><strong>系統流水號 / 原始識別號:</strong> #${escapeHtml(record["編號"])} (識別號: ${escapeHtml(record["識別號"] || record["編號"])})</p>
-                <p><strong>學年度 / 學期:</strong> ${escapeHtml(record["學年度"])} 第 ${escapeHtml(record["學期"]) === '上' ? '1 (上)' : '2 (下)'} 學期</p>
-                <p><strong>活動類別 / 賽事層級:</strong> ${escapeHtml(record["活動類別"] || '')} / ${escapeHtml(record["競賽層級"] || '')}</p>
-                <p><strong>活動主辦單位:</strong> ${escapeHtml(record["活動主辦單位"] || '無')}</p>
-                <p><strong>資料來源:</strong> <span class="badge badge-teal">${escapeHtml(record["資料來源"] || '無')}</span> ${record["會議記錄時間"] ? `(公告/紀錄日期: ${escapeHtml(record["會議記錄時間"])})` : ''}</p>
-                <p><strong>教學單位:</strong> ${escapeHtml(record["所屬學院"])} - ${escapeHtml(resolveDeptCode(record["系所名稱"], record["學生所屬系科 - 系所代碼"]))} (班級: ${escapeHtml(record["學制班級"] || '無')})</p>
-                <p><strong>獲獎學生:</strong> ${escapeHtml(record["獲獎學生"] || '無')} (學號: ${escapeHtml(record["學生學號"] || '無')})</p>
-                <p><strong>指導老師:</strong> ${escapeHtml(record["指導老師"] || '無')}</p>
-                <p><strong>活動名稱:</strong> ${escapeHtml(record["競賽或活動名稱"] || record["活動名稱"])}</p>
-                <p><strong>競賽項目 / 作品:</strong> ${escapeHtml(record["參賽項目或作品名稱"] || record["競賽項目"])}</p>
-                <p><strong>是否獲獎 / 名次:</strong> <span class="badge ${isAwarded ? 'badge-success' : 'badge-warning'}">${escapeHtml(isAwarded ? '是' : '否')}</span> <span class="badge badge-purple">${escapeHtml(record["榮譽獎項"] || record["獲獎名次"])}</span></p>
-                <p><strong>活動起迄日期:</strong> ${escapeHtml(record["活動起始日期"] || '無')} ~ ${escapeHtml(record["活動結束日期"] || '無')}</p>
-                <p><strong>核發獎助學金:</strong> ${amtDetailText}</p>
-                <p><strong>發放狀態:</strong> <span class="badge badge-info">${escapeHtml(record["發放與領獎狀態"])}</span> (通知時間: ${escapeHtml(record["通知時間"] || '無')})</p>
-                <p><strong>領獎截止期限:</strong> ${escapeHtml(record["領獎截止日期"] || '無')}</p>
-                <p><strong>原畢業學校:</strong> ${escapeHtml(record["原畢業學校"] || '無')}</p>
-                <p><strong>原始佐證網址:</strong> ${evHtml}</p>
-                <p><strong>備註說明:</strong> ${escapeHtml(record["備註"] || '無')}</p>
-            </div>
+            ${unlockStripHtml}
+            <form id="detail-edit-form" class="grid-form">
+                <div class="detail-edit-highlight-box">
+                    <div class="form-group">
+                        <label style="color:#0F766E; font-weight:700;"><i class="fa-solid fa-sack-dollar"></i> 核發獎助學金金額 (NTD) *</label>
+                        <input type="number" id="detail-edit-amount" value="${amtNum}" min="0" step="500" placeholder="輸入核定金額，尚未核定填 0">
+                    </div>
+                    <div class="form-group">
+                        <label style="color:#0F766E; font-weight:700;"><i class="fa-solid fa-award"></i> 領獎與發放狀態 *</label>
+                        <select id="detail-edit-status">
+                            ${statusOpts.map(s => `<option value="${escapeHtml(s)}" ${curStatus === s ? 'selected' : ''}>${escapeHtml(s)}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>通知發送日期</label>
+                        <input type="text" id="detail-edit-notify-date" value="${escapeHtml(record["通知時間"] || '')}" placeholder="例如：2026-11-18">
+                    </div>
+                    <div class="form-group">
+                        <label>領獎截止日期</label>
+                        <input type="text" id="detail-edit-deadline" value="${escapeHtml(record["領獎截止日期"] || '')}" placeholder="例如：2026-12-15">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>識別號 (表單編號)</label>
+                    <input type="text" id="detail-edit-custom-id" value="${escapeHtml(record["識別號"] || record["編號"] || '')}">
+                </div>
+                <div class="form-group">
+                    <label>資料來源 *</label>
+                    <input type="text" id="detail-edit-source" list="source-suggestions" value="${escapeHtml(record["資料來源"] || '無')}">
+                </div>
+
+                <div class="form-group">
+                    <label>學年度 *</label>
+                    <select id="detail-edit-year">
+                        ${['115學年度', '114學年度', '113學年度', '112學年度'].map(y => `<option value="${y}" ${curYear === y ? 'selected' : ''}>${y}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>學期 *</label>
+                    <select id="detail-edit-term">
+                        <option value="上" ${curTerm === '上' ? 'selected' : ''}>上學期 (第1學期)</option>
+                        <option value="下" ${curTerm === '下' ? 'selected' : ''}>下學期 (第2學期)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>活動類別 *</label>
+                    <select id="detail-edit-cat">
+                        ${catBaseOpts.map(c => `<option value="${escapeHtml(c)}" ${curCat === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>競賽層級 *</label>
+                    <select id="detail-edit-level">
+                        ${levelOpts.map(l => `<option value="${escapeHtml(l)}" ${curLevel === l ? 'selected' : ''}>${escapeHtml(l)}</option>`).join('')}
+                    </select>
+                </div>
+
+                <div class="form-group full-width">
+                    <label>活動名稱 (賽事全稱) *</label>
+                    <input type="text" id="detail-edit-event" value="${escapeHtml(record["活動名稱"] || record["競賽或活動名稱"] || '')}">
+                </div>
+                <div class="form-group full-width">
+                    <label>競賽項目 / 作品題目 *</label>
+                    <input type="text" id="detail-edit-work" value="${escapeHtml(record["競賽項目"] || record["參賽項目或作品名稱"] || '')}">
+                </div>
+
+                <div class="form-group">
+                    <label>活動主辦單位 <small style="color:#64748B;">(無記錄填「無」)</small></label>
+                    <input type="text" id="detail-edit-organizer" value="${escapeHtml(record["活動主辦單位"] || '無')}">
+                </div>
+                <div class="form-group">
+                    <label>會議 / 公告記錄日期</label>
+                    <input type="text" id="detail-edit-meeting-date" value="${escapeHtml(record["會議記錄時間"] || '')}" placeholder="例如：2026-08-06">
+                </div>
+
+                <div class="form-group">
+                    <label>是否獲獎 *</label>
+                    <select id="detail-edit-awarded">
+                        <option value="是" ${isAwarded ? 'selected' : ''}>是</option>
+                        <option value="否" ${!isAwarded ? 'selected' : ''}>否</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>獲獎名次 / 榮譽獎項 *</label>
+                    <input type="text" id="detail-edit-rank" value="${escapeHtml(record["獲獎名次"] || record["榮譽獎項"] || '')}">
+                </div>
+
+                <div class="form-group">
+                    <label>個人 / 團體競賽</label>
+                    <select id="detail-edit-group">
+                        <option value="個人競賽" ${curGroup === '個人競賽' ? 'selected' : ''}>個人競賽</option>
+                        <option value="團體競賽" ${curGroup === '團體競賽' ? 'selected' : ''}>團體競賽</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>競賽項目是否與就讀科系相關</label>
+                    <select id="detail-edit-dept-rel">
+                        <option value="是" ${curDeptRel === '是' ? 'selected' : ''}>是</option>
+                        <option value="否" ${curDeptRel === '否' ? 'selected' : ''}>否</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>人數(男)</label>
+                    <input type="number" id="detail-edit-male" value="${escapeHtml(record["人數(男)"] !== undefined ? record["人數(男)"] : '0')}" min="0">
+                </div>
+                <div class="form-group">
+                    <label>人數(女)</label>
+                    <input type="number" id="detail-edit-female" value="${escapeHtml(record["人數(女)"] !== undefined ? record["人數(女)"] : '0')}" min="0">
+                </div>
+
+                <div class="form-group">
+                    <label>活動起始日期</label>
+                    <input type="text" id="detail-edit-start-date" value="${escapeHtml(record["活動起始日期"] || '')}" placeholder="YYYY/MM/DD">
+                </div>
+                <div class="form-group">
+                    <label>活動結束日期</label>
+                    <input type="text" id="detail-edit-end-date" value="${escapeHtml(record["活動結束日期"] || '')}" placeholder="YYYY/MM/DD">
+                </div>
+
+                <div class="form-group">
+                    <label>所屬學院 *</label>
+                    <select id="detail-edit-college">
+                        ${collegeOpts.map(c => `<option value="${escapeHtml(c)}" ${curCollege === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>系所名稱 * <small id="detail-dept-code-preview" style="color:#64748B;">(${escapeHtml(resolveDeptCode(record["系所名稱"], record["學生所屬系科 - 系所代碼"]))})</small></label>
+                    <input type="text" id="detail-edit-dept" list="detail-dept-datalist" value="${escapeHtml(record["系所名稱"] || '')}">
+                    <datalist id="detail-dept-datalist">
+                        ${allDepts.map(d => `<option value="${escapeHtml(d)}"></option>`).join('')}
+                    </datalist>
+                </div>
+
+                <div class="form-group">
+                    <label>獲獎學生姓名${piiLockHint}</label>
+                    <input type="text" id="detail-edit-student" class="${piiReadonlyClass}" value="${escapeHtml(record["獲獎學生"] || '無')}" ${piiReadonlyAttr}>
+                </div>
+                <div class="form-group">
+                    <label>學生學號${piiLockHint}</label>
+                    <input type="text" id="detail-edit-stuid" class="${piiReadonlyClass}" value="${escapeHtml(record["學生學號"] || '無')}" ${piiReadonlyAttr}>
+                </div>
+
+                <div class="form-group">
+                    <label>學制班級${piiLockHint}</label>
+                    <input type="text" id="detail-edit-grade" class="${piiReadonlyClass}" value="${escapeHtml(record["學制班級"] || '無')}" ${piiReadonlyAttr}>
+                </div>
+                <div class="form-group">
+                    <label>指導老師</label>
+                    <input type="text" id="detail-edit-teacher" value="${escapeHtml(record["指導老師"] || '無')}">
+                </div>
+
+                <div class="form-group">
+                    <label>原畢業學校${piiLockHint}</label>
+                    <input type="text" id="detail-edit-school" class="${piiReadonlyClass}" value="${escapeHtml(record["原畢業學校"] || '無')}" ${piiReadonlyAttr}>
+                </div>
+                <div class="form-group">
+                    <label>原始佐證網址${!isAdminUnlocked && evHref === '#protected-evidence' ? piiLockHint : ''}</label>
+                    <input type="text" id="detail-edit-url" class="${!isAdminUnlocked && evHref === '#protected-evidence' ? piiReadonlyClass : ''}" value="${escapeHtml(record["佐證連結"] || '無')}" ${!isAdminUnlocked && evHref === '#protected-evidence' ? 'readonly' : ''}>
+                    ${evLinkActionHtml}
+                </div>
+
+                <div class="form-group full-width">
+                    <label>備註說明</label>
+                    <textarea id="detail-edit-remarks" rows="2">${escapeHtml(record["備註"] || '')}</textarea>
+                </div>
+            </form>
         `;
+
+        const detailFormEl = document.getElementById('detail-edit-form');
+        if (detailFormEl) {
+            detailFormEl.addEventListener('submit', (e) => {
+                e.preventDefault();
+                handleSaveDetailModal();
+            });
+        }
+
+        const btnUnlockInDetail = document.getElementById('btn-detail-unlock-pii');
+        if (btnUnlockInDetail) {
+            btnUnlockInDetail.addEventListener('click', () => {
+                const targetUid = activeDetailRecordId;
+                requireAdminUnlock(() => {
+                    openDetailModal(targetUid);
+                }, '解鎖後即可檢視與編輯完整學生姓名、學號、班級與母校資料。');
+            });
+        }
+
+        const detailDeptInput = document.getElementById('detail-edit-dept');
+        const detailCollegeSelect = document.getElementById('detail-edit-college');
+        const detailDeptCodePreview = document.getElementById('detail-dept-code-preview');
+        if (detailDeptInput) {
+            detailDeptInput.addEventListener('input', () => {
+                const dVal = detailDeptInput.value.trim();
+                if (detailDeptCodePreview) {
+                    detailDeptCodePreview.textContent = `(${resolveDeptCode(dVal, '')})`;
+                }
+                if (window.FOOYIN_COLLEGES_MAP && detailCollegeSelect) {
+                    Object.entries(window.FOOYIN_COLLEGES_MAP).forEach(([col, depts]) => {
+                        if (depts.includes(dVal)) detailCollegeSelect.value = col;
+                    });
+                }
+            });
+        }
+
+        const detailAmtInput = document.getElementById('detail-edit-amount');
+        const detailStatusSelect = document.getElementById('detail-edit-status');
+        let detailStatusTouched = false;
+        if (detailStatusSelect) {
+            detailStatusSelect.addEventListener('change', () => { detailStatusTouched = true; });
+        }
+        if (detailAmtInput) {
+            detailAmtInput.addEventListener('input', () => {
+                const v = Number(detailAmtInput.value || 0);
+                if (!detailStatusTouched && detailStatusSelect && v > 0 && detailStatusSelect.value === '尚待核定') {
+                    detailStatusSelect.value = '待通知';
+                }
+            });
+        }
+
         document.getElementById('detail-modal').classList.add('show');
+    }
+
+    function handleSaveDetailModal() {
+        if (!activeDetailRecordId) return;
+        const targetUid = activeDetailRecordId;
+        const wasUnlockedWhenRendered = detailModalRenderedUnlocked;
+
+        const getVal = (id, fallback = '') => {
+            const el = document.getElementById(id);
+            return el ? String(el.value || '').trim() : fallback;
+        };
+
+        const collectedUpdates = {
+            "識別號": getVal('detail-edit-custom-id'),
+            "學年度": getVal('detail-edit-year', '114學年度'),
+            "學期": getVal('detail-edit-term', '上'),
+            "活動類別": getVal('detail-edit-cat', '全國'),
+            "競賽層級": getVal('detail-edit-level', '國內競賽'),
+            "活動名稱": getVal('detail-edit-event'),
+            "競賽項目": getVal('detail-edit-work'),
+            "活動主辦單位": getVal('detail-edit-organizer', '無') || '無',
+            "會議記錄時間": getVal('detail-edit-meeting-date'),
+            "是否獲獎": getVal('detail-edit-awarded', '是'),
+            "獲獎名次": getVal('detail-edit-rank', '獲獎') || '獲獎',
+            "個人/團體競賽": getVal('detail-edit-group', '個人競賽'),
+            "競賽項目是否與就讀科系相關": getVal('detail-edit-dept-rel', '是'),
+            "人數(男)": String(Math.max(0, Number(getVal('detail-edit-male', '0')) || 0)),
+            "人數(女)": String(Math.max(0, Number(getVal('detail-edit-female', '0')) || 0)),
+            "活動起始日期": getVal('detail-edit-start-date'),
+            "活動結束日期": getVal('detail-edit-end-date'),
+            "所屬學院": getVal('detail-edit-college', '護理學院'),
+            "系所名稱": getVal('detail-edit-dept', '護理系') || '護理系',
+            "指導老師": getVal('detail-edit-teacher', '無') || '無',
+            "獎助金金額": Math.max(0, Number(getVal('detail-edit-amount', '0')) || 0),
+            "發放與領獎狀態": getVal('detail-edit-status', '尚待核定'),
+            "通知時間": getVal('detail-edit-notify-date'),
+            "領獎截止日期": getVal('detail-edit-deadline'),
+            "資料來源": getVal('detail-edit-source', '無') || '無',
+            "備註": getVal('detail-edit-remarks')
+        };
+
+        if (!collectedUpdates["活動名稱"]) {
+            alert('請填寫「活動名稱」！');
+            return;
+        }
+
+        const urlInputVal = getVal('detail-edit-url', '無') || '無';
+        if (wasUnlockedWhenRendered) {
+            collectedUpdates["獲獎學生"] = getVal('detail-edit-student', '無') || '無';
+            collectedUpdates["學生學號"] = getVal('detail-edit-stuid', '無') || '無';
+            collectedUpdates["學制班級"] = getVal('detail-edit-grade', '無') || '無';
+            collectedUpdates["原畢業學校"] = getVal('detail-edit-school', '無') || '無';
+            collectedUpdates["佐證連結"] = urlInputVal;
+        } else if (urlInputVal !== '#protected-evidence') {
+            collectedUpdates["佐證連結"] = urlInputVal;
+        }
+
+        requireAdminUnlock(async () => {
+            const saved = await commitRecordUpdates(targetUid, collectedUpdates, true);
+            document.getElementById('detail-modal').classList.remove('show');
+            if (saved) {
+                const dispId = saved["識別號"] || saved["編號"];
+                showToast(`已成功儲存修正並送出紀錄 #${dispId}！`);
+            }
+        }, '儲存並送出獲獎紀錄修訂涉及系統資料變更，請先完成管理員解鎖。');
     }
 
     let activeNotifyRecord = null;
     function openNotifyModal(recordId) {
-        activeNotifyRecord = allRecords.find(r => String(r["編號"]) === String(recordId));
+        activeNotifyRecord = allRecords.find(r => getRecordUid(r) === String(recordId) || String(r["編號"]) === String(recordId));
         if (!activeNotifyRecord) return;
 
         document.getElementById('notify-target-student').textContent = activeNotifyRecord["獲獎學生"] || '無';
@@ -1731,15 +2276,16 @@ function initFooyinAwardsApp() {
             });
         } catch (_) {}
 
-        const targetPub = basePublicRecords.find(r => String(r["編號"]) === String(activeNotifyRecord["編號"]));
+        const targetPub = basePublicRecords.find(r => getRecordUid(r) === getRecordUid(activeNotifyRecord) || String(r["編號"]) === String(activeNotifyRecord["編號"]));
         if (targetPub) {
             targetPub["發放與領獎狀態"] = "通知已發送";
             targetPub["通知時間"] = todayStr;
+            persistStaticEditedPatch(targetPub);
         }
         syncEffectiveRecords();
         document.getElementById('notify-modal').classList.remove('show');
-        applyFilters();
-        alert(`已成功向 ${activeNotifyRecord["獲獎學生"]} 發送領獎通知！`);
+        applyFilters(true);
+        showToast(`已成功向 ${activeNotifyRecord["獲獎學生"]} 發送領獎通知！`);
     });
 
     async function handleStudentSign(recordId) {
@@ -1754,9 +2300,13 @@ function initFooyinAwardsApp() {
                 });
             } catch (_) {}
             const targetPub = basePublicRecords.find(r => getRecordUid(r) === String(recordId) || String(r["編號"]) === String(recordId));
-            if (targetPub) targetPub["發放與領獎狀態"] = "已線上簽領";
+            if (targetPub) {
+                targetPub["發放與領獎狀態"] = "已線上簽領";
+                persistStaticEditedPatch(targetPub);
+            }
             syncEffectiveRecords();
             applyFilters(true);
+            showToast(`已完成 #${record["識別號"] || record["編號"]} 線上簽領狀態更新！`);
         }
     }
 
@@ -1882,6 +2432,7 @@ function initFooyinAwardsApp() {
         basePublicRecords = basePublicRecords.filter(r => !targetSet.has(getRecordUid(r)));
         uidsToDelete.forEach(uid => {
             delete sessionFullRecordsMap[uid];
+            removeStaticEditedPatch(uid);
             if (decryptedPiiMap && decryptedPiiMap[uid]) {
                 delete decryptedPiiMap[uid];
             }

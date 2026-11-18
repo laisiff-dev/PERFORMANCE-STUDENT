@@ -216,10 +216,10 @@ def infer_year_and_semester(record: Dict[str, Any]) -> Tuple[str, str]:
     return final_year, default_term
 
 
-def normalize_award_record(record: Dict[str, Any]) -> Dict[str, Any]:
+def normalize_award_record(record: Dict[str, Any], preserve_explicit_year_term: bool = False) -> Dict[str, Any]:
     """
     標準化單筆獲獎紀錄：
-    - 自動由資料來源或會議記錄時間校正『學年度』與『學期』
+    - 自動由資料來源或會議記錄時間校正『學年度』與『學期』(手動編輯模式保留明確指定之學年度與學期)
     - 『活動主辦單位』若無記錄或誤填為會議/官網來源，統一寫為 "無"
     - 確保『資料來源』獨立且完整保留
     """
@@ -246,9 +246,15 @@ def normalize_award_record(record: Dict[str, Any]) -> Dict[str, Any]:
     r["活動主辦單位"] = normalized_org
     r["資料來源"] = raw_src
 
-    norm_year, norm_term = infer_year_and_semester(r)
-    r["學年度"] = norm_year
-    r["學期"] = norm_term
+    explicit_yr = str(r.get("學年度", "") or "").replace("學年度", "").strip()
+    explicit_tm = str(r.get("學期", "") or "").strip()
+    if preserve_explicit_year_term and explicit_yr and explicit_tm in ("上", "下"):
+        r["學年度"] = f"{explicit_yr}學年度"
+        r["學期"] = explicit_tm
+    else:
+        norm_year, norm_term = infer_year_and_semester(r)
+        r["學年度"] = norm_year
+        r["學期"] = norm_term
     return r
 
 
@@ -470,16 +476,99 @@ class FooyinAwardsManager:
             "current_total_records": len(self.records)
         }
 
-    def update_status(self, record_id: int, new_status: str, notify_time: Optional[str] = None) -> bool:
-        """更新領獎與發放狀態"""
+    def update_status(
+        self,
+        record_id: Any,
+        new_status: str,
+        notify_time: Optional[str] = None,
+        amount: Optional[int] = None,
+    ) -> bool:
+        """更新領獎與發放狀態（並支援同步核定更新獎助金金額）"""
+        target_str = str(record_id if record_id is not None else "").lstrip("#").strip()
         for r in self.records:
-            if r.get("編號") == record_id:
-                r["發放與領獎狀態"] = new_status
-                if notify_time:
+            if str(r.get("編號", "")).strip() == target_str or str(r.get("識別號", "")).lstrip("#").strip() == target_str:
+                if new_status:
+                    r["發放與領獎狀態"] = new_status
+                if notify_time is not None:
                     r["通知時間"] = notify_time
+                if amount is not None:
+                    r["獎助金金額"] = max(0, int(amount))
                 self.save_data()
                 return True
         return False
+
+    def update_record(
+        self,
+        record_id: Any,
+        updates: Dict[str, Any],
+        custom_id: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """完整修訂並更新單筆獲獎紀錄欄位"""
+        target_num = str(record_id if record_id is not None else "").lstrip("#").strip()
+        target_cid = str(custom_id or "").lstrip("#").strip()
+
+        target_idx = -1
+        if target_num:
+            for idx, r in enumerate(self.records):
+                if str(r.get("編號", "")).strip() == target_num:
+                    target_idx = idx
+                    break
+        if target_idx == -1 and (target_cid or target_num):
+            fb = target_cid or target_num
+            for idx, r in enumerate(self.records):
+                if str(r.get("識別號", "")).lstrip("#").strip() == fb:
+                    target_idx = idx
+                    break
+        if target_idx == -1:
+            return None
+
+        cur = dict(self.records[target_idx])
+        orig_num = cur.get("編號")
+
+        for k, v in (updates or {}).items():
+            if k == "編號" or v is None:
+                continue
+            cur[k] = v
+
+        # 同步雙向欄位別名與系所代碼
+        ev = str(cur.get("活動名稱") or cur.get("競賽或活動名稱") or "").strip()
+        if "活動名稱" in updates:
+            ev = str(updates["活動名稱"]).strip()
+        elif "競賽或活動名稱" in updates:
+            ev = str(updates["競賽或活動名稱"]).strip()
+        cur["活動名稱"] = ev
+        cur["競賽或活動名稱"] = ev
+
+        wk = str(cur.get("競賽項目") or cur.get("參賽項目或作品名稱") or "").strip()
+        if "競賽項目" in updates:
+            wk = str(updates["競賽項目"]).strip()
+        elif "參賽項目或作品名稱" in updates:
+            wk = str(updates["參賽項目或作品名稱"]).strip()
+        cur["競賽項目"] = wk
+        cur["參賽項目或作品名稱"] = wk
+
+        rk = str(cur.get("獲獎名次") or cur.get("榮譽獎項") or "").strip()
+        if "獲獎名次" in updates:
+            rk = str(updates["獲獎名次"]).strip()
+        elif "榮譽獎項" in updates:
+            rk = str(updates["榮譽獎項"]).strip()
+        cur["獲獎名次"] = rk
+        cur["榮譽獎項"] = rk
+
+        dept_name = str(cur.get("系所名稱", "") or "").strip()
+        if dept_name in FOOYIN_DEPT_CODE_MAP and "學生所屬系科 - 系所代碼" not in updates:
+            cur["學生所屬系科 - 系所代碼"] = FOOYIN_DEPT_CODE_MAP[dept_name]
+        if dept_name in FOOYIN_COLLEGE_MAP and not cur.get("所屬學院"):
+            cur["所屬學院"] = FOOYIN_COLLEGE_MAP[dept_name]
+
+        raw_amt = re.sub(r"[^\d]", "", str(cur.get("獎助金金額", 0)))
+        cur["獎助金金額"] = int(raw_amt) if raw_amt else 0
+
+        normalized = normalize_award_record(cur, preserve_explicit_year_term=True)
+        normalized["編號"] = orig_num
+        self.records[target_idx] = normalized
+        self.save_data()
+        return normalized
 
     def delete_record(self, record_id: Any, custom_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """刪除單筆錯誤或重複匯入之獲獎紀錄"""

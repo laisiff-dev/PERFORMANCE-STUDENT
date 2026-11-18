@@ -21,7 +21,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- SheetJS Library for .xls and .xlsx Import -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <link rel="stylesheet" href="styles.css?v=20261118_1">
+    <link rel="stylesheet" href="styles.css?v=20261118_2">
 </head>
 
 <body>
@@ -438,21 +438,26 @@
         </div>
     </div>
 
-    <!-- 模態彈窗：紀錄詳情 Modal -->
+    <!-- 模態彈窗：紀錄詳情檢視與修正 Modal -->
     <div class="modal" id="detail-modal">
-        <div class="modal-content glass">
+        <div class="modal-content glass" style="max-width: 850px;">
             <div class="modal-header">
-                <h3><i class="fa-solid fa-circle-info"></i> 獲獎與領獎紀錄詳細資訊</h3>
-                <button class="close-btn close-modal">&times;</button>
+                <h3><i class="fa-solid fa-pen-to-square"></i> 獲獎與領獎紀錄詳情檢視與修正</h3>
+                <button class="close-btn close-modal" type="button">&times;</button>
             </div>
-            <div class="modal-body" id="detail-modal-body">
-                <!-- 動態注入內容 -->
+            <div class="modal-body" id="detail-modal-body" style="max-height: 74vh; overflow-y: auto; padding-right: 4px;">
+                <!-- 動態注入可檢視與修正表單內容 -->
             </div>
-            <div class="modal-footer">
+            <div class="modal-footer" style="justify-content: space-between; flex-wrap: wrap;">
                 <button class="btn btn-danger" id="btn-detail-delete-record" type="button">
                     <i class="fa-solid fa-trash-can"></i> 刪除此筆紀錄
                 </button>
-                <button class="btn btn-secondary close-modal">關閉</button>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <button class="btn btn-secondary close-modal" type="button">取消關閉</button>
+                    <button class="btn btn-primary" id="btn-detail-save-record" type="button">
+                        <i class="fa-solid fa-floppy-disk"></i> 儲存修正並送出
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -956,8 +961,8 @@
 
     <div id="app-toast-container" class="toast-container"></div>
 
-    <script src="data.js?v=20261118_1"></script>
-    <script src="app.js?v=20261118_1"></script>
+    <script src="data.js?v=20261118_2"></script>
+    <script src="app.js?v=20261118_2"></script>
 </body>
 
 </html>

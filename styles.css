@@ -583,3 +583,150 @@ body {
     from { opacity: 0; transform: translateY(12px); }
     to { opacity: 1; transform: translateY(0); }
 }
+
+/* Inline Quick-Edit for Scholarship Amount & Award Status + Editable Detail Modal */
+.quick-cell-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 8px;
+    border: 1px dashed #CBD5E1;
+    background: #FFFFFF;
+    color: #475569;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    white-space: nowrap;
+}
+.quick-cell-btn:hover {
+    border-style: solid;
+    border-color: #2563EB;
+    background: #EFF6FF;
+    color: #1D4ED8;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(37, 99, 235, 0.12);
+}
+.quick-cell-btn.has-amt {
+    border-style: solid;
+    border-color: #FDE68A;
+    background: #FFFBEB;
+}
+.quick-cell-btn.has-amt:hover {
+    border-color: #D97706;
+    background: #FEF3C7;
+}
+.quick-cell-btn i {
+    font-size: 11px;
+    opacity: 0.72;
+}
+.quick-status-btn {
+    border: 1px solid transparent;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.18s ease;
+    font-family: inherit;
+}
+.quick-status-btn:hover {
+    border-color: #2563EB;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(37, 99, 235, 0.16);
+    filter: brightness(0.97);
+}
+.inline-amt-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #FFFFFF;
+    border: 1.5px solid #2563EB;
+    border-radius: 8px;
+    padding: 3px 6px;
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.12);
+}
+.inline-ntd-prefix {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #D97706;
+}
+.inline-amt-input {
+    width: 82px;
+    border: none;
+    outline: none;
+    font-size: 13px;
+    font-weight: 700;
+    color: #0F172A;
+    padding: 2px;
+    background: transparent;
+}
+.inline-status-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+}
+.inline-status-select {
+    padding: 4px 8px;
+    border-radius: 8px;
+    border: 1.5px solid #2563EB;
+    background: #FFFFFF;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #0F172A;
+    cursor: pointer;
+    outline: none;
+}
+.btn-quick-save {
+    padding: 5px 10px !important;
+    font-size: 12px !important;
+    background: #10B981 !important;
+    color: #FFFFFF !important;
+    border-radius: 7px !important;
+}
+.btn-quick-save:hover {
+    background: #059669 !important;
+}
+.btn-quick-cancel {
+    padding: 5px 8px !important;
+    font-size: 12px !important;
+    border-radius: 7px !important;
+}
+.detail-edit-highlight-box {
+    grid-column: span 2;
+    background: linear-gradient(135deg, rgba(254, 243, 199, 0.48), rgba(204, 251, 241, 0.42));
+    border: 1px solid #99F6E4;
+    border-left: 4px solid #0D9488;
+    border-radius: 12px;
+    padding: 14px 16px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+.detail-unlock-strip {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 10px 14px;
+    border-radius: 10px;
+    margin-bottom: 12px;
+    font-size: 13px;
+}
+.detail-unlock-strip.locked {
+    background: #FFFBEB;
+    border: 1px solid #FDE68A;
+    color: #92400E;
+}
+.detail-unlock-strip.unlocked {
+    background: #ECFDF5;
+    border: 1px solid #A7F3D0;
+    color: #065F46;
+}
+.input-locked-readonly {
+    background: #F1F5F9 !important;
+    color: #64748B !important;
+    cursor: not-allowed;
+}
