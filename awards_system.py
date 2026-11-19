@@ -194,12 +194,9 @@ def infer_year_and_semester(record: Dict[str, Any]) -> Tuple[str, str]:
         final_year = cur_year or src_year or meet_year or "114學年度"
         return final_year, meet_term
 
-    # 3. 若已有明確學期 (例如來自 112-114 填報資料模版)
+    # 3. 若已有明確學期 (支援 112 ~ 120 學年度上、下學期)
     if cur_term in ("上", "下"):
         final_year = cur_year or src_year or "114學年度"
-        # 防呆：115 學年度目前僅至 115 上學期 (2026年8-11月)
-        if final_year == "115學年度" and not record.get("活動起始日期"):
-            return final_year, "上"
         return final_year, cur_term
 
     # 4. 從活動結束日期 -> 活動起始日期 -> 通知時間讀取（跨月賽事以結案/頒獎日期為準）
@@ -207,12 +204,10 @@ def infer_year_and_semester(record: Dict[str, Any]) -> Tuple[str, str]:
         dt_year, dt_term = parse_date_to_year_semester(str(record.get(dt_field, "") or ""))
         if dt_term:
             final_year = cur_year or src_year or dt_year or "114學年度"
-            if final_year == "115學年度":
-                return final_year, "上"
             return final_year, dt_term
 
     final_year = cur_year or src_year or "114學年度"
-    default_term = "上" if final_year == "115學年度" else (src_term or "上")
+    default_term = src_term or "上"
     return final_year, default_term
 
 

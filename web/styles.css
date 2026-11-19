@@ -730,3 +730,47 @@ body {
     color: #64748B !important;
     cursor: not-allowed;
 }
+
+/* Modal Layer Hierarchy (Prevent Security/Confirm/Detail Modals from opening behind other Modals) */
+#staging-modal { z-index: 2100 !important; }
+#export-options-modal { z-index: 2200 !important; }
+#storage-settings-modal { z-index: 2250 !important; }
+#detail-modal { z-index: 2350 !important; }
+#delete-confirm-modal { z-index: 2500 !important; }
+#security-modal { z-index: 2650 !important; }
+#app-toast-container { z-index: 3000 !important; }
+
+/* Staging Button & Storage Reconnect Banner */
+.btn-staging {
+    background: linear-gradient(135deg, #0D9488, #0F766E);
+    color: #FFFFFF;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    box-shadow: 0 2px 8px rgba(13, 148, 136, 0.25);
+}
+.btn-staging:hover {
+    background: linear-gradient(135deg, #0F766E, #115E59);
+    transform: translateY(-1px);
+}
+.btn-staging.has-items {
+    background: linear-gradient(135deg, #D97706, #B45309);
+    animation: stagingPulse 2s infinite;
+}
+@keyframes stagingPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.45); }
+    50% { box-shadow: 0 0 0 6px rgba(217, 119, 6, 0); }
+}
+.storage-sync-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 10px 18px;
+    margin-bottom: 14px;
+    border-radius: 12px;
+    background: linear-gradient(90deg, #E0F2FE, #F0F9FF);
+    border: 1px solid #7DD3FC;
+    color: #0C4A6E;
+    font-size: 13.5px;
+    font-weight: 500;
+}

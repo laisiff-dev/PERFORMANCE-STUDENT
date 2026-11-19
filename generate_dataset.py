@@ -142,10 +142,10 @@ def load_and_clean_official_xls() -> List[Dict[str, Any]]:
         if item["識別號"].isdigit():
             raw_by_id[int(item["識別號"])] = item
 
-    # 偵測並移除 114 上學期整批重複匯入區塊 (409634~409760 為 409507~409633 完全相同之 +127 批次重複)
+    # 偵測並移除 114 上學期整批重複匯入區塊 (409633~409759 為 409506~409632 完全相同之 +127 批次重複)
     duplicate_batch_ids = set()
     for num_id, item in raw_by_id.items():
-        if 409507 <= num_id <= 409633 and (num_id + 127) in raw_by_id:
+        if 409506 <= num_id <= 409633 and (num_id + 127) in raw_by_id:
             other = raw_by_id[num_id + 127]
             same_content = all(item[k] == other[k] for k in headers if k != "識別號")
             if same_content:

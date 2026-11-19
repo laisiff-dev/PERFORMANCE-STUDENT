@@ -315,7 +315,7 @@ class FooyinWeeklyUpdater:
         results.extend(self.scan_cloud_drive_admin_folders())
         results.extend(self.scan_public_webpages())
 
-        # 2. 經查證自輔英科技大學校園新聞專區 (epo.fy.edu.tw) 之真實公開獲獎公告（供與 112-114 填報庫進行實證差異比對）
+        # 2. 經查證自輔英科技大學校園新聞專區 (epo.fy.edu.tw) 之真實公開獲獎公告（供與填報庫進行實證差異比對）
         verified_epo_items = [
             {
                 "識別號": "FY115-001",
@@ -344,7 +344,7 @@ class FooyinWeeklyUpdater:
                 "發放與領獎狀態": "尚待核定",
                 "通知時間": "",
                 "領獎截止日期": "",
-                "原畢業學校": "無",
+                "原畢業學校": "醒吾高級中學",
                 "佐證連結": "https://epo.fy.edu.tw/p/406-1058-76437,r1306.php?Lang=zh-tw",
                 "備註": "輔英校園新聞 2026-08-06 查證（115學年度上學期最新國際賽獲獎）"
             },
@@ -377,10 +377,42 @@ class FooyinWeeklyUpdater:
                 "領獎截止日期": "",
                 "原畢業學校": "長庚科技大學五專部",
                 "佐證連結": "https://epo.fy.edu.tw/p/406-1058-76254,r1306.php?Lang=zh-tw",
-                "備註": "輔英校園新聞 2026-07-08 查證（112-114 填報表於 2026/05 結算後新增之暑期國際賽事）"
+                "備註": "輔英校園新聞 2026-07-08 查證（112-114 填報表 5 月結算後新增之暑期國際賽事）"
             },
             {
-                "識別號": "EPO-75863-1",
+                "識別號": "EPO-76254-2",
+                "學年度": "114學年度",
+                "學期": "下",
+                "會議記錄時間": "2026-07-08",
+                "活動類別": "國際(外)",
+                "活動主辦單位": "馬來西亞國際美容博覽會(IBE)、馬來西亞國際技職協會(MIVA)",
+                "資料來源": "學校公開網頁 (輔英新聞)",
+                "所屬學院": "醫學與健康學院",
+                "系所名稱": "健康美容系",
+                "學生所屬系科 - 系所代碼": "健康美容系 - 3839",
+                "學制班級": "無",
+                "獲獎學生": "蔡莉鈞",
+                "學生學號": "無",
+                "指導老師": "柯美華 副主任",
+                "競賽層級": "國際競賽",
+                "競賽或活動名稱": "2026年第四屆MIVA世界卓越盃國際賽",
+                "活動名稱": "2026年第四屆MIVA世界卓越盃國際賽",
+                "參賽項目或作品名稱": "芳療類《七大元素能量覺醒》",
+                "競賽項目": "芳療類《七大元素能量覺醒》",
+                "榮譽獎項": "金牌",
+                "獲獎名次": "金牌",
+                "是否獲獎": "是",
+                "獎助金金額": 0,
+                "發放與領獎狀態": "尚待核定",
+                "通知時間": "",
+                "領獎截止日期": "",
+                "原畢業學校": "高雄市私立三信高級家事商業職業學校",
+                "佐證連結": "https://epo.fy.edu.tw/p/406-1058-76254,r1306.php?Lang=zh-tw",
+                "備註": "輔英校園新聞 2026-07-08 查證（112-114 填報表 5 月結算後新增之暑期國際賽事）"
+            },
+            {
+                "識別號": "421568",
+                "target_update_id": "421568",
                 "學年度": "114學年度",
                 "學期": "下",
                 "會議記錄時間": "2026-06-03",
@@ -390,15 +422,15 @@ class FooyinWeeklyUpdater:
                 "所屬學院": "人文與管理學院",
                 "系所名稱": "休閒與遊憩事業管理系",
                 "學生所屬系科 - 系所代碼": "休閒與遊憩事業管理系 - 1457",
-                "學制班級": "無",
+                "學制班級": "四技2年1班",
                 "獲獎學生": "姜曼羚",
                 "學生學號": "無",
                 "指導老師": "梁國禎、梁豐君 教練",
                 "競賽層級": "體育競賽",
                 "競賽或活動名稱": "115年全國身心障礙國民運動會",
                 "活動名稱": "115年全國身心障礙國民運動會",
-                "參賽項目或作品名稱": "帕拉游泳（100公尺蝶式、100公尺仰式等五項）",
-                "競賽項目": "帕拉游泳（100公尺蝶式、100公尺仰式等五項）",
+                "參賽項目或作品名稱": "肢體障礙S9級女子組50公尺、100公尺、400公尺自由式、100公尺仰式及200公尺混合式",
+                "競賽項目": "肢體障礙S9級女子組50公尺、100公尺、400公尺自由式、100公尺仰式及200公尺混合式",
                 "榮譽獎項": "五金（三破全國紀錄）",
                 "獲獎名次": "五金（三破全國紀錄）",
                 "是否獲獎": "是",
@@ -406,17 +438,53 @@ class FooyinWeeklyUpdater:
                 "發放與領獎狀態": "尚待核定",
                 "通知時間": "",
                 "領獎截止日期": "",
-                "原畢業學校": "無",
+                "原畢業學校": "高雄市立文山高級中學",
                 "佐證連結": "https://epo.fy.edu.tw/p/406-1058-75863,r1306.php?Lang=zh-tw",
-                "備註": "輔英校園新聞 2026-06-03 查證（全國身心障礙國民運動會勇奪五金並三破全國紀錄）"
+                "備註": "輔英校園新聞 2026-06-03 查證（對應表 4-8-1 識別號 #421568～#421573 五面金牌，補充學生姓名、班級與指導教練）"
             },
             {
-                "識別號": "EPO-75509-1",
+                "識別號": "421564",
+                "target_update_id": "421564",
                 "學年度": "114學年度",
                 "學期": "下",
                 "會議記錄時間": "2026-05-18",
                 "活動類別": "全國",
-                "活動主辦單位": "教育部技術及職業教育司、朝陽科技大學",
+                "活動主辦單位": "教育部",
+                "資料來源": "學校公開網頁 (輔英新聞)",
+                "所屬學院": "醫學與健康學院",
+                "系所名稱": "醫學檢驗生物技術系",
+                "學生所屬系科 - 系所代碼": "醫學檢驗生物技術系 - 1448",
+                "學制班級": "無",
+                "獲獎學生": "杜佩芸",
+                "學生學號": "無",
+                "指導老師": "葉耀宗 教授、邱敏熙 助理教授",
+                "競賽層級": "國內競賽",
+                "競賽或活動名稱": "2026年全國技專校院學生實務專題製作競賽暨成果展",
+                "活動名稱": "2026年全國技專校院學生實務專題製作競賽暨成果展",
+                "參賽項目或作品名稱": "生技醫農群：以腸道菌相組成之改變開發可預測心血管疾病風險的IVD試劑組",
+                "競賽項目": "生技醫農群：以腸道菌相組成之改變開發可預測心血管疾病風險的IVD試劑組",
+                "榮譽獎項": "第一名",
+                "獲獎名次": "第一名",
+                "是否獲獎": "是",
+                "人數(男)": "0",
+                "人數(女)": "1",
+                "個人/團體競賽": "個人競賽",
+                "獎助金金額": 0,
+                "發放與領獎狀態": "尚待核定",
+                "通知時間": "",
+                "領獎截止日期": "",
+                "原畢業學校": "輔英科技大學",
+                "佐證連結": "https://epo.fy.edu.tw/p/406-1058-75509,r1306.php?Lang=zh-tw",
+                "備註": "輔英校園新聞 2026-05-18 查證（對應表 4-8-1 識別號 #421564 生技醫農群第一名，補充獲獎學生與指導教授）"
+            },
+            {
+                "識別號": "421565",
+                "target_update_id": "421565",
+                "學年度": "114學年度",
+                "學期": "下",
+                "會議記錄時間": "2026-05-18",
+                "活動類別": "全國",
+                "活動主辦單位": "教育部",
                 "資料來源": "學校公開網頁 (輔英新聞)",
                 "所屬學院": "醫學與健康學院",
                 "系所名稱": "醫學檢驗生物技術系",
@@ -428,8 +496,8 @@ class FooyinWeeklyUpdater:
                 "競賽層級": "國內競賽",
                 "競賽或活動名稱": "2026年全國技專校院學生實務專題製作競賽暨成果展",
                 "活動名稱": "2026年全國技專校院學生實務專題製作競賽暨成果展",
-                "參賽項目或作品名稱": "生技醫農群：利用深共熔溶劑配合液相微萃取法快速偵測牛奶中殘留四環黴素",
-                "競賽項目": "生技醫農群：利用深共熔溶劑配合液相微萃取法快速偵測牛奶中殘留四環黴素",
+                "參賽項目或作品名稱": "生技醫農群：利用深共熔溶劑配合液相—液相微萃取法萃取牛奶中殘留四環黴素並利用HPLC-UV快速偵測",
+                "競賽項目": "生技醫農群：利用深共熔溶劑配合液相—液相微萃取法萃取牛奶中殘留四環黴素並利用HPLC-UV快速偵測",
                 "榮譽獎項": "第二名",
                 "獲獎名次": "第二名",
                 "是否獲獎": "是",
@@ -440,9 +508,9 @@ class FooyinWeeklyUpdater:
                 "發放與領獎狀態": "尚待核定",
                 "通知時間": "",
                 "領獎截止日期": "",
-                "原畢業學校": "輔英科技大學五專部",
+                "原畢業學校": "輔英科技大學",
                 "佐證連結": "https://epo.fy.edu.tw/p/406-1058-75509,r1306.php?Lang=zh-tw",
-                "備註": "輔英校園新聞 2026-05-18 查證（可補充表 4-8-1 識別號 421562 之獲獎學生與指導教授資訊）"
+                "備註": "輔英校園新聞 2026-05-18 查證（對應表 4-8-1 識別號 #421565 生技醫農群第二名，補充獲獎學生與指導教授）"
             }
         ]
         results.extend([normalize_award_record(item) for item in verified_epo_items])
@@ -454,9 +522,13 @@ class FooyinWeeklyUpdater:
         baseline_records = self.manager.records
 
         baseline_map = {}
+        baseline_by_cid = {}
         for r in baseline_records:
             key = (str(r.get("獲獎學生", "")).strip(), str(r.get("競賽或活動名稱", "")).strip())
             baseline_map[key] = r
+            cid = str(r.get("識別號", "")).lstrip("#").strip()
+            if cid:
+                baseline_by_cid[cid] = r
 
         diff_results = []
         new_awards_count = 0
@@ -466,13 +538,15 @@ class FooyinWeeklyUpdater:
         for crawled in crawled_list:
             student = str(crawled.get("獲獎學生", "")).strip()
             event = str(crawled.get("競賽或活動名稱", "")).strip()
+            cid = str(crawled.get("target_update_id") or crawled.get("識別號") or "").lstrip("#").strip()
             key = (student, event)
 
             disp_student = mask_student_names(student) if public_mode else student
             disp_stuid = mask_student_id(crawled.get("學生學號", "")) if public_mode else crawled.get("學生學號", "")
             disp_crawled = deidentify_record(crawled) if public_mode else crawled
 
-            if key not in baseline_map:
+            base_item = baseline_by_cid.get(cid) or baseline_map.get(key)
+            if not base_item:
                 new_awards_count += 1
                 diff_results.append({
                     "diff_status": "新增獲獎公告",
@@ -487,18 +561,19 @@ class FooyinWeeklyUpdater:
                     "amount": crawled.get("獎助金金額", 0),
                     "crawled_detail": disp_crawled,
                     "baseline_detail": None,
-                    "explanation": f"自【{crawled.get('資料來源')}】({crawled.get('學年度')}{crawled.get('學期')}) 偵測到新榮譽。"
+                    "explanation": f"自【{crawled.get('資料來源')}】({crawled.get('學年度')}{crawled.get('學期')}學期) 查證之公開新榮譽，尚未列於現有資料庫。"
                 })
             else:
-                base_item = baseline_map[key]
                 disp_base = deidentify_record(base_item) if public_mode else base_item
                 diffs = []
-                if str(crawled.get("榮譽獎項")) != str(base_item.get("榮譽獎項")):
-                    diffs.append(f"獎項名稱差異 ({crawled.get('榮譽獎項')} vs {base_item.get('榮譽獎項')})")
-                if str(crawled.get("獎助金金額")) != str(base_item.get("獎助金金額")):
-                    diffs.append(f"獎助金金額異動 (${crawled.get('獎助金金額')} vs ${base_item.get('獎助金金額')})")
-                if str(crawled.get("資料來源")) != str(base_item.get("資料來源")):
-                    diffs.append(f"來源更新 ({crawled.get('資料來源')})")
+                base_stu = str(base_item.get("獲獎學生", "無") or "無").strip()
+                base_tch = str(base_item.get("指導老師", "無") or "無").strip()
+                if student and student != "無" and base_stu in ("", "無") and base_stu != student:
+                    diffs.append(f"可補充原表 #{base_item.get('識別號')} 未登載之獲獎學生姓名")
+                if str(crawled.get("指導老師", "無")) != "無" and base_tch in ("", "無"):
+                    diffs.append(f"補充指導教師 ({crawled.get('指導老師')})")
+                if str(crawled.get("榮譽獎項")) != str(base_item.get("榮譽獎項")) and not diffs:
+                    diffs.append(f"獎項資訊補充 ({crawled.get('榮譽獎項')})")
 
                 if diffs:
                     field_diff_count += 1
@@ -515,7 +590,7 @@ class FooyinWeeklyUpdater:
                         "amount": crawled.get("獎助金金額", 0),
                         "crawled_detail": disp_crawled,
                         "baseline_detail": disp_base,
-                        "explanation": "；".join(diffs)
+                        "explanation": f"對應現有識別號 #{base_item.get('識別號')}：" + "、".join(diffs)
                     })
                 else:
                     matched_count += 1

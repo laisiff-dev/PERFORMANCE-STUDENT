@@ -105,11 +105,17 @@ def extract_pii_entry(record: Dict[str, Any]) -> Dict[str, Any]:
 def deidentify_record(record: Dict[str, Any]) -> Dict[str, Any]:
     """將單筆獲獎紀錄轉為可安全公開於 GitHub Pages 之去識別化版本"""
     safe_rec = dict(record)
+    raw_names = str(record.get("獲獎學生", "") or "").strip()
+    safe_remarks = str(record.get("備註", "") or "")
+    if raw_names and raw_names not in PLACEHOLDER_NAMES and "○" not in raw_names:
+        for nm in [s.strip() for s in re.split(r"[、,，/／;；]+", raw_names) if len(s.strip()) >= 2]:
+            safe_remarks = safe_remarks.replace(nm, _mask_single_name(nm))
     safe_rec["獲獎學生"] = mask_student_names(record.get("獲獎學生"))
     safe_rec["學生學號"] = mask_student_id(record.get("學生學號"))
     safe_rec["學制班級"] = mask_grade_class(record.get("學制班級"))
     safe_rec["原畢業學校"] = mask_high_school(record.get("原畢業學校"))
     safe_rec["佐證連結"] = mask_evidence_url(record.get("佐證連結"))
+    safe_rec["備註"] = safe_remarks
     return safe_rec
 
 

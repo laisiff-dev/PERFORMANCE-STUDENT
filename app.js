@@ -11,6 +11,90 @@ function initFooyinAwardsApp() {
 
     const PLACEHOLDER_SET = new Set(['', '無', '未填', '未填寫', '學生未填', '未公開', '未提供', 'None', 'none', 'nan', 'NaN', 'N/A', 'NA', '-', '—']);
     const INTERNAL_SOURCE_KWS = ['行政會議', '校務會議', '官方網站', '官網', '公開網站', '公開新聞', '公開網頁', '輔英新聞', '填報資料模版', '填報資料'];
+    const SUPPORTED_ACAD_YEARS = ['112', '113', '114', '115', '116', '117', '118', '119', '120'];
+    const SUPPORTED_ACAD_YEAR_LABELS = SUPPORTED_ACAD_YEARS.map(y => `${y}學年度`);
+    const SUPPORTED_ACAD_YEAR_DESC = [...SUPPORTED_ACAD_YEAR_LABELS].reverse();
+
+    // 輕量級 IndexedDB 儲存引擎（支援儲存 FileSystemFileHandle 電腦/雲端硬碟檔案控制代碼與無容量限制加密快照）
+    const IDB_NAME = 'FooyinAwardsPersistentDB_v2';
+    const IDB_STORE = 'kv_store';
+    const LS_FALLBACK_PREFIX = 'fooyin_idb_fb_';
+
+    function openAppIdb() {
+        return new Promise((resolve) => {
+            if (!window.indexedDB) { resolve(null); return; }
+            try {
+                const req = window.indexedDB.open(IDB_NAME, 1);
+                req.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains(IDB_STORE)) {
+                        db.createObjectStore(IDB_STORE);
+                    }
+                };
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => resolve(null);
+            } catch (_) {
+                resolve(null);
+            }
+        });
+    }
+
+    async function idbGet(key) {
+        const db = await openAppIdb();
+        if (db) {
+            return new Promise((resolve) => {
+                try {
+                    const tx = db.transaction(IDB_STORE, 'readonly');
+                    const req = tx.objectStore(IDB_STORE).get(key);
+                    req.onsuccess = () => resolve(req.result !== undefined ? req.result : null);
+                    req.onerror = () => resolve(null);
+                } catch (_) { resolve(null); }
+            });
+        }
+        try {
+            const raw = window.localStorage ? window.localStorage.getItem(LS_FALLBACK_PREFIX + key) : null;
+            return raw ? JSON.parse(raw) : null;
+        } catch (_) { return null; }
+    }
+
+    async function idbSet(key, val) {
+        const db = await openAppIdb();
+        if (db) {
+            const ok = await new Promise((resolve) => {
+                try {
+                    const tx = db.transaction(IDB_STORE, 'readwrite');
+                    tx.objectStore(IDB_STORE).put(val, key);
+                    tx.oncomplete = () => resolve(true);
+                    tx.onerror = () => resolve(false);
+                } catch (_) { resolve(false); }
+            });
+            if (ok) return true;
+        }
+        try {
+            if (window.localStorage && key !== 'bound_fs_handle') {
+                window.localStorage.setItem(LS_FALLBACK_PREFIX + key, JSON.stringify(val));
+                return true;
+            }
+        } catch (_) {}
+        return false;
+    }
+
+    async function idbDel(key) {
+        const db = await openAppIdb();
+        if (db) {
+            await new Promise((resolve) => {
+                try {
+                    const tx = db.transaction(IDB_STORE, 'readwrite');
+                    tx.objectStore(IDB_STORE).delete(key);
+                    tx.oncomplete = () => resolve(true);
+                    tx.onerror = () => resolve(false);
+                } catch (_) { resolve(false); }
+            });
+        }
+        try {
+            if (window.localStorage) window.localStorage.removeItem(LS_FALLBACK_PREFIX + key);
+        } catch (_) {}
+    }
 
     // 靜態離線模式已刪除識別鍵紀錄（僅儲存不含任何學生個資之公開識別碼，確保重新整理後不復現已刪錯誤資料）
     const STATIC_DELETED_KEYS_STORAGE = 'fooyin_deleted_static_keys_v1';
@@ -138,17 +222,35 @@ function initFooyinAwardsApp() {
         ? window.INITIAL_AWARDS_DATA.map(r => applyStaticEditedPatch(normalizeAwardRecord(r))).filter(r => !isStaticRecordDeleted(r))
         : [];
 
-    // 刪除、批次勾選與列內快速核定編輯狀態
+    // 刪除、批次勾選、列內快速核定與暫存區/儲存狀態
     let isBatchDeleteMode = false;
     let selectedDeleteIds = new Set();
     let pendingDeleteUids = [];
     let activeDetailRecordId = null;
+    let activeEditingStagingUid = null;
     let detailModalRenderedUnlocked = false;
     let editingQuickRowUid = null;
     let editingQuickFocusField = 'amt';
 
+    // 待審核資料暫存區 (Staging Area) 狀態
+    let stagingRecords = [];            // 去識別化後之待審核暫存清單
+    let stagingFullPiiMap = {};         // 當次連線暫存項目之完整個資 (僅存揮發性記憶體)
+    let selectedStagingUids = new Set();
+
+    // 電腦硬碟 / 雲端硬碟雙向儲存與自動載入設定
+    let boundFileHandle = null;
+    let storagePrefs = {
+        auto_cloud_url: '',
+        server_storage_dir: '',
+        auto_load_startup: true,
+        bound_file_name: '',
+        last_sync_at: ''
+    };
+
     // 揮發性記憶體管理員狀態（絕不寫入 localStorage / sessionStorage / Cookie）
     let isAdminUnlocked = false;
+    let activeSessionPassphrase = null;
+    let activeEncryptedVault = window.ENCRYPTED_PII_VAULT || null;
     let decryptedPiiMap = null;      // { [編號]: { 獲獎學生, 學生學號, 學制班級, 原畢業學校, 佐證連結 } }
     let sessionFullRecordsMap = {};  // 當次連線新增紀錄之完整個資（上鎖後僅顯示遮罩版）
     let adminApiToken = null;
@@ -253,13 +355,21 @@ function initFooyinAwardsApp() {
     }
 
     function deidentifyRecord(rec) {
+        let safeRemarks = String(rec["備註"] || '');
+        const rawNames = String(rec["獲獎學生"] || '').trim();
+        if (rawNames && !PLACEHOLDER_SET.has(rawNames) && !rawNames.includes('○')) {
+            rawNames.split(/[、,，/／;；]+/).map(s => s.trim()).filter(s => s.length >= 2).forEach(nm => {
+                safeRemarks = safeRemarks.split(nm).join(maskSingleName(nm));
+            });
+        }
         return {
             ...rec,
             "獲獎學生": maskStudentNames(rec["獲獎學生"]),
             "學生學號": maskStudentId(rec["學生學號"]),
             "學制班級": maskGradeClass(rec["學制班級"]),
             "原畢業學校": maskHighSchool(rec["原畢業學校"]),
-            "佐證連結": maskEvidenceUrl(rec["佐證連結"])
+            "佐證連結": maskEvidenceUrl(rec["佐證連結"]),
+            "備註": safeRemarks
         };
     }
 
@@ -340,12 +450,9 @@ function initFooyinAwardsApp() {
             return { year: curYear || srcParsed.year || meetParsed.year || '114學年度', term: meetParsed.term };
         }
 
-        // 3. 既有明確有效學期 (例如 112-114 填報模版)
+        // 3. 既有明確有效學期 (支援 112~120 學年度上、下學期)
         if (curTerm === '上' || curTerm === '下') {
             const finalYr = curYear || srcParsed.year || '114學年度';
-            if (finalYr === '115學年度' && !record["活動起始日期"]) {
-                return { year: finalYr, term: '上' };
-            }
             return { year: finalYr, term: curTerm };
         }
 
@@ -355,7 +462,7 @@ function initFooyinAwardsApp() {
             const dtParsed = parseDateToYearSemester(record[df]);
             if (dtParsed.term) {
                 const finalYr = curYear || srcParsed.year || dtParsed.year || '114學年度';
-                return { year: finalYr, term: finalYr === '115學年度' ? '上' : dtParsed.term };
+                return { year: finalYr, term: dtParsed.term };
             }
         }
 
@@ -665,6 +772,55 @@ function initFooyinAwardsApp() {
         return pt;
     }
 
+    function uint8ArrayToBase64(bytes) {
+        let binary = '';
+        const chunkSize = 0x8000;
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+            binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+        }
+        return window.btoa(binary);
+    }
+
+    async function encryptVaultWithWebCrypto(piiMapObj, passphrase) {
+        if (!passphrase || !window.crypto || !window.crypto.subtle) return activeEncryptedVault;
+        try {
+            const enc = new TextEncoder();
+            const salt = window.crypto.getRandomValues(new Uint8Array(16));
+            const iv = window.crypto.getRandomValues(new Uint8Array(12));
+            const iterations = 150000;
+            const keyMaterial = await window.crypto.subtle.importKey(
+                'raw',
+                enc.encode(passphrase),
+                { name: 'PBKDF2' },
+                false,
+                ['deriveKey']
+            );
+            const aesKey = await window.crypto.subtle.deriveKey(
+                { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' },
+                keyMaterial,
+                { name: 'AES-GCM', length: 256 },
+                false,
+                ['encrypt']
+            );
+            const plainBytes = enc.encode(JSON.stringify(piiMapObj));
+            const cipherBuf = await window.crypto.subtle.encrypt(
+                { name: 'AES-GCM', iv },
+                aesKey,
+                plainBytes
+            );
+            return {
+                kdf: 'PBKDF2-HMAC-SHA256',
+                cipher: 'AES-256-GCM',
+                iterations,
+                salt: uint8ArrayToBase64(salt),
+                iv: uint8ArrayToBase64(iv),
+                ciphertext: uint8ArrayToBase64(new Uint8Array(cipherBuf))
+            };
+        } catch (_) {
+            return activeEncryptedVault;
+        }
+    }
+
     async function decryptVaultWithWebCrypto(vaultObj, passphrase) {
         const enc = new TextEncoder();
         const salt = base64ToUint8Array(vaultObj.salt);
@@ -811,8 +967,11 @@ function initFooyinAwardsApp() {
         msgEl.textContent = '正在執行 PBKDF2-SHA256 金鑰衍生與 AES-256-GCM 驗證解密...';
 
         try {
-            if (window.ENCRYPTED_PII_VAULT && window.ENCRYPTED_PII_VAULT.ciphertext) {
-                decryptedPiiMap = await decryptVaultWithWebCrypto(window.ENCRYPTED_PII_VAULT, passphrase);
+            const vaultSource = (activeEncryptedVault && activeEncryptedVault.ciphertext)
+                ? activeEncryptedVault
+                : window.ENCRYPTED_PII_VAULT;
+            if (vaultSource && vaultSource.ciphertext) {
+                decryptedPiiMap = await decryptVaultWithWebCrypto(vaultSource, passphrase);
             } else {
                 // 若為純公開模式 (--public-only) 則嘗試向本機 API 驗證
                 const resp = await fetch('/api/admin/unlock', {
@@ -841,6 +1000,7 @@ function initFooyinAwardsApp() {
             }
 
             isAdminUnlocked = true;
+            activeSessionPassphrase = passphrase;
             failedUnlockCount = 0;
             pwInput.value = '';
             msgEl.style.color = '#059669';
@@ -882,6 +1042,7 @@ function initFooyinAwardsApp() {
             } catch (_) {}
         }
         isAdminUnlocked = false;
+        activeSessionPassphrase = null;
         decryptedPiiMap = null;
         adminApiToken = null;
         pendingUnlockCallback = null;
@@ -927,6 +1088,294 @@ function initFooyinAwardsApp() {
         return rY === tY;
     }
 
+    // =========================================================
+    // 電腦硬碟 / 雲端硬碟雙向儲存與開啟自動載入引擎 (IndexedDB + FileSystemAccess API + Cloud URL)
+    // =========================================================
+    function buildFullPiiMapForEncryption() {
+        const mergedMap = { ...(decryptedPiiMap || {}) };
+        Object.entries(sessionFullRecordsMap || {}).forEach(([k, v]) => {
+            mergedMap[k] = { ...(mergedMap[k] || {}), ...v };
+        });
+        return mergedMap;
+    }
+
+    async function buildPortableMasterSnapshot() {
+        if (isAdminUnlocked && activeSessionPassphrase) {
+            const fullPii = buildFullPiiMapForEncryption();
+            if (Object.keys(fullPii).length > 0) {
+                activeEncryptedVault = await encryptVaultWithWebCrypto(fullPii, activeSessionPassphrase);
+                decryptedPiiMap = fullPii;
+            }
+        }
+        const nowIso = new Date().toISOString();
+        return {
+            schema: 'FooyinAwardsMasterSnapshot_v2',
+            updated_at: nowIso,
+            public_records: basePublicRecords.map(r => deidentifyRecord(normalizeAwardRecord(r, true))),
+            encrypted_pii_vault: activeEncryptedVault || window.ENCRYPTED_PII_VAULT || null,
+            deleted_static_keys: [...staticDeletedKeysSet],
+            staging_public_records: stagingRecords.map(s => deidentifyRecord(s)),
+            sources_config: sourcesConfigState,
+            storage_prefs: {
+                auto_cloud_url: storagePrefs.auto_cloud_url || '',
+                server_storage_dir: storagePrefs.server_storage_dir || '',
+                auto_load_startup: storagePrefs.auto_load_startup !== false,
+                bound_file_name: storagePrefs.bound_file_name || '',
+                last_sync_at: nowIso
+            }
+        };
+    }
+
+    async function saveMasterDatabaseSnapshot(writeToBoundFile = true) {
+        const snap = await buildPortableMasterSnapshot();
+        storagePrefs.last_sync_at = snap.updated_at;
+        await idbSet('master_snapshot', snap);
+        await idbSet('user_settings', snap.storage_prefs);
+        await idbSet('staging_queue', snap.staging_public_records);
+
+        if (writeToBoundFile && boundFileHandle) {
+            try {
+                const perm = boundFileHandle.queryPermission
+                    ? await boundFileHandle.queryPermission({ mode: 'readwrite' })
+                    : 'granted';
+                if (perm === 'granted') {
+                    const writable = await boundFileHandle.createWritable();
+                    await writable.write(JSON.stringify(snap, null, 2));
+                    await writable.close();
+                    storagePrefs.bound_file_name = boundFileHandle.name || storagePrefs.bound_file_name;
+                    await idbSet('user_settings', storagePrefs);
+                }
+            } catch (err) {
+                console.warn('寫入電腦/雲端綁定儲存檔略過:', err);
+            }
+        }
+        updateStorageUI();
+        return snap;
+    }
+
+    async function saveStagingQueueOnly() {
+        await idbSet('staging_queue', stagingRecords.map(s => deidentifyRecord(s)));
+        updateStagingBadges();
+    }
+
+    function applyMasterSnapshotObject(snap, shouldOverwriteStaging = true) {
+        if (!snap || typeof snap !== 'object') return false;
+        if (Array.isArray(snap.deleted_static_keys)) {
+            snap.deleted_static_keys.forEach(k => staticDeletedKeysSet.add(String(k)));
+            saveStaticDeletedSet();
+        }
+        if (snap.encrypted_pii_vault && snap.encrypted_pii_vault.ciphertext) {
+            activeEncryptedVault = snap.encrypted_pii_vault;
+        }
+        if (snap.sources_config && snap.sources_config.school_public_sources) {
+            sourcesConfigState = snap.sources_config;
+        }
+        if (snap.storage_prefs && typeof snap.storage_prefs === 'object') {
+            storagePrefs = {
+                ...storagePrefs,
+                ...snap.storage_prefs,
+                bound_file_name: boundFileHandle ? (boundFileHandle.name || snap.storage_prefs.bound_file_name || '') : (snap.storage_prefs.bound_file_name || '')
+            };
+        }
+        if (Array.isArray(snap.public_records) && snap.public_records.length > 0) {
+            basePublicRecords = snap.public_records
+                .map(r => deidentifyRecord(applyStaticEditedPatch(normalizeAwardRecord(r, true))))
+                .filter(r => !isStaticRecordDeleted(r));
+        }
+        if (shouldOverwriteStaging && Array.isArray(snap.staging_public_records)) {
+            stagingRecords = snap.staging_public_records;
+            selectedStagingUids = new Set(stagingRecords.map(s => s._stagingUid).filter(Boolean));
+        }
+        syncEffectiveRecords();
+        updateStagingBadges();
+        updateStorageUI();
+        return true;
+    }
+
+    async function readAndApplyFromFileHandle(handle, requestPermIfNeeded = false) {
+        if (!handle) return false;
+        try {
+            let perm = handle.queryPermission ? await handle.queryPermission({ mode: 'readwrite' }) : 'granted';
+            if (perm !== 'granted' && requestPermIfNeeded && handle.requestPermission) {
+                perm = await handle.requestPermission({ mode: 'readwrite' });
+            }
+            if (perm !== 'granted') {
+                const readPerm = handle.queryPermission ? await handle.queryPermission({ mode: 'read' }) : 'prompt';
+                if (readPerm !== 'granted') return 'NEEDS_PERMISSION';
+            }
+            const file = await handle.getFile();
+            const text = await file.text();
+            if (!text.trim()) {
+                // 新建立之空白檔案，立即寫入當前快照初始化
+                await saveMasterDatabaseSnapshot(true);
+                return true;
+            }
+            const parsed = JSON.parse(text);
+            if (parsed && parsed.schema === 'FooyinAwardsMasterSnapshot_v2') {
+                applyMasterSnapshotObject(parsed, true);
+                await idbSet('master_snapshot', parsed);
+                return true;
+            } else if (Array.isArray(parsed)) {
+                // 若使用者選取一般匯出之 JSON 陣列，送入暫存區供審核或更新
+                enqueueRecordsToStaging(parsed, `電腦/雲端儲存檔 (${file.name})`, false);
+                return true;
+            }
+        } catch (err) {
+            console.warn('讀取電腦/雲端儲存檔失敗:', err);
+        }
+        return false;
+    }
+
+    function updateStorageUI() {
+        const headerLbl = document.getElementById('storage-status-label');
+        const summaryEl = document.getElementById('storage-current-summary');
+        const badgeEl = document.getElementById('storage-last-sync-badge');
+        const stageHintEl = document.getElementById('staging-storage-target-hint');
+        const autoUrlInput = document.getElementById('cfg-auto-cloud-url');
+        const srvDirInput = document.getElementById('cfg-server-storage-dir');
+        const autoLoadChk = document.getElementById('cfg-auto-load-startup');
+
+        const fName = (boundFileHandle && boundFileHandle.name) || storagePrefs.bound_file_name || '';
+        const syncTimeTxt = storagePrefs.last_sync_at
+            ? new Date(storagePrefs.last_sync_at).toLocaleString('zh-TW', { hour12: false })
+            : '尚未變更';
+
+        if (headerLbl) {
+            headerLbl.textContent = fName ? `已連結: ${fName}` : '儲存位置與自動載入';
+        }
+        if (summaryEl) {
+            summaryEl.innerHTML = fName
+                ? `已綁定電腦／雲端硬碟同步檔案：<strong>${escapeHtml(fName)}</strong>（與瀏覽器永久庫雙向自動同步，共 <strong>${basePublicRecords.length}</strong> 筆正式紀錄）。`
+                : `瀏覽器永久資料庫 (IndexedDB) 自動記憶已啟用（共 <strong>${basePublicRecords.length}</strong> 筆正式紀錄）；您可於下方綁定電腦硬碟或 Google 雲端硬碟資料夾檔案。`;
+        }
+        if (badgeEl) {
+            badgeEl.textContent = fName ? `已綁定檔案｜更新: ${syncTimeTxt}` : `自動記憶中｜${syncTimeTxt}`;
+        }
+        if (stageHintEl) {
+            stageHintEl.innerHTML = `<i class="fa-solid fa-hard-drive"></i> 確認後寫入位置：${fName ? escapeHtml(fName) + ' ＋ 瀏覽器永久庫' : '瀏覽器永久庫（可點上方設定電腦/雲端硬碟檔案）'}`;
+        }
+        if (autoUrlInput && document.activeElement !== autoUrlInput) autoUrlInput.value = storagePrefs.auto_cloud_url || '';
+        if (srvDirInput && document.activeElement !== srvDirInput) srvDirInput.value = storagePrefs.server_storage_dir || '';
+        if (autoLoadChk) autoLoadChk.checked = storagePrefs.auto_load_startup !== false;
+    }
+
+    async function handleBindNewStorageFile() {
+        if (window.showSaveFilePicker) {
+            try {
+                const handle = await window.showSaveFilePicker({
+                    suggestedName: '輔英獲獎正式資料庫_自動同步.json',
+                    types: [{ description: '輔英獲獎系統加密同步資料庫 (.json)', accept: { 'application/json': ['.json'] } }]
+                });
+                boundFileHandle = handle;
+                storagePrefs.bound_file_name = handle.name || '輔英獲獎正式資料庫_自動同步.json';
+                await idbSet('bound_fs_handle', handle);
+                await saveMasterDatabaseSnapshot(true);
+                const banner = document.getElementById('storage-reconnect-banner');
+                if (banner) banner.style.display = 'none';
+                showToast(`已設定儲存位置為「${storagePrefs.bound_file_name}」，後續將自動同步寫入與載入！`);
+                return;
+            } catch (err) {
+                if (err && err.name === 'AbortError') return;
+            }
+        }
+        handleDownloadSyncBackup();
+        showToast('此瀏覽器不支援直接掛載硬碟代碼，已為您下載同步備份檔並啟用瀏覽器 IndexedDB 自動保存！');
+    }
+
+    async function handleBindExistingStorageFile() {
+        if (window.showOpenFilePicker) {
+            try {
+                const [handle] = await window.showOpenFilePicker({
+                    multiple: false,
+                    types: [{ description: '輔英獲獎系統同步資料庫 (.json)', accept: { 'application/json': ['.json'] } }]
+                });
+                if (!handle) return;
+                boundFileHandle = handle;
+                storagePrefs.bound_file_name = handle.name || '';
+                await idbSet('bound_fs_handle', handle);
+                const ok = await readAndApplyFromFileHandle(handle, true);
+                if (ok === true) {
+                    const banner = document.getElementById('storage-reconnect-banner');
+                    if (banner) banner.style.display = 'none';
+                    applyFilters(true);
+                    showToast(`已成功綁定並從「${storagePrefs.bound_file_name}」載入最新正式資料庫！`);
+                }
+                return;
+            } catch (err) {
+                if (err && err.name === 'AbortError') return;
+            }
+        }
+        const fbInput = document.getElementById('fallback-load-sync-file');
+        if (fbInput) fbInput.click();
+    }
+
+    async function handleDownloadSyncBackup() {
+        const snap = await saveMasterDatabaseSnapshot(false);
+        const blob = new Blob([JSON.stringify(snap, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = storagePrefs.bound_file_name || '輔英獲獎正式資料庫_自動同步.json';
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    async function handleSaveStorageSettings() {
+        const autoUrlEl = document.getElementById('cfg-auto-cloud-url');
+        const srvDirEl = document.getElementById('cfg-server-storage-dir');
+        const autoLoadEl = document.getElementById('cfg-auto-load-startup');
+
+        storagePrefs.auto_cloud_url = autoUrlEl ? autoUrlEl.value.trim() : '';
+        storagePrefs.server_storage_dir = srvDirEl ? srvDirEl.value.trim() : '';
+        storagePrefs.auto_load_startup = autoLoadEl ? Boolean(autoLoadEl.checked) : true;
+
+        if (storagePrefs.server_storage_dir) {
+            try {
+                await fetch('/api/storage-config', {
+                    method: 'POST',
+                    headers: authHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({
+                        custom_storage_dir: storagePrefs.server_storage_dir,
+                        auto_load_on_startup: storagePrefs.auto_load_startup
+                    })
+                });
+            } catch (_) {}
+        }
+
+        await saveMasterDatabaseSnapshot(true);
+        if (storagePrefs.auto_cloud_url && /^https?:\/\//i.test(storagePrefs.auto_cloud_url)) {
+            await autoCheckCloudUrlSource(storagePrefs.auto_cloud_url, true);
+        }
+        document.getElementById('storage-settings-modal').classList.remove('show');
+        showToast('已儲存電腦/雲端儲存與自動載入設定！下次開啟將自動套用。');
+    }
+
+    async function autoCheckCloudUrlSource(cloudUrl, notifyToast = false) {
+        if (!cloudUrl || !/^https?:\/\//i.test(cloudUrl)) return;
+        try {
+            const resp = await fetch(cloudUrl);
+            if (!resp.ok) return;
+            const text = await resp.text();
+            const trimmed = text.trim();
+            if (trimmed.startsWith('{')) {
+                const parsed = JSON.parse(trimmed);
+                if (parsed && parsed.schema === 'FooyinAwardsMasterSnapshot_v2') {
+                    applyMasterSnapshotObject(parsed, false);
+                    applyFilters(true);
+                    if (notifyToast) showToast('已成功從雲端同步連結載入最新正式資料庫！');
+                    return;
+                }
+            }
+            const rows = parseCSVorJSON(text, '雲端硬碟自動載入');
+            if (rows.length > 0) {
+                const res = enqueueRecordsToStaging(rows, '雲端硬碟連結自動掃描', false);
+                if (res.added > 0 && notifyToast) {
+                    showToast(`從雲端連結偵測到 ${res.added} 筆新/異動資料，已送入「暫存審核區」！`);
+                }
+            }
+        } catch (_) {}
+    }
+
     // 初始化系統
     initSystem();
 
@@ -934,16 +1383,30 @@ function initFooyinAwardsApp() {
         setupEventListeners();
         await fetchAwardsData();
         updateSecurityUI();
+        updateStagingBadges();
+        updateStorageUI();
         applyFilters();
     }
 
     async function fetchAwardsData() {
+        // 1. 先還原使用者上次儲存的設定與暫存審核區
+        const savedSettings = await idbGet('user_settings');
+        if (savedSettings && typeof savedSettings === 'object') {
+            storagePrefs = { ...storagePrefs, ...savedSettings };
+        }
+        const savedStaging = await idbGet('staging_queue');
+        if (Array.isArray(savedStaging)) {
+            stagingRecords = savedStaging;
+            selectedStagingUids = new Set(stagingRecords.map(s => s._stagingUid).filter(Boolean));
+        }
+
+        // 2. 若本機 Python API 伺服器啟動中，優先連線取得最新庫
         try {
             const resp = await fetch('/api/awards', { headers: authHeaders() });
             if (resp.ok) {
                 const data = await resp.json();
                 if (Array.isArray(data) && data.length > 0) {
-                    basePublicRecords = data.map(r => deidentifyRecord(normalizeAwardRecord(r)));
+                    basePublicRecords = data.map(r => deidentifyRecord(normalizeAwardRecord(r, true)));
                     if (isAdminUnlocked) {
                         data.forEach(r => {
                             const idKey = String(r["編號"] || r["識別號"] || '');
@@ -964,14 +1427,43 @@ function initFooyinAwardsApp() {
                 }
             }
         } catch (_) {
-            // GitHub Pages 靜態模式直接使用內嵌去識別化資料
+            // GitHub Pages 靜態模式，使用自動持久化引擎載入
         }
 
+        // 3. 預設基準庫
         if (window.INITIAL_AWARDS_DATA && window.INITIAL_AWARDS_DATA.length > 0) {
             basePublicRecords = window.INITIAL_AWARDS_DATA
                 .map(r => deidentifyRecord(applyStaticEditedPatch(normalizeAwardRecord(r))))
                 .filter(r => !isStaticRecordDeleted(r));
         }
+
+        // 4. 若開啟自動載入，自動從瀏覽器 IndexedDB 永久庫、綁定之電腦/雲端硬碟檔案及雲端連結載入最新資料
+        if (storagePrefs.auto_load_startup !== false) {
+            const savedSnap = await idbGet('master_snapshot');
+            if (savedSnap && savedSnap.schema === 'FooyinAwardsMasterSnapshot_v2') {
+                applyMasterSnapshotObject(savedSnap, false);
+            }
+
+            const savedHandle = await idbGet('bound_fs_handle');
+            if (savedHandle) {
+                boundFileHandle = savedHandle;
+                storagePrefs.bound_file_name = savedHandle.name || storagePrefs.bound_file_name;
+                const handleResult = await readAndApplyFromFileHandle(savedHandle, false);
+                if (handleResult === 'NEEDS_PERMISSION') {
+                    const banner = document.getElementById('storage-reconnect-banner');
+                    const msg = document.getElementById('storage-reconnect-msg');
+                    if (msg) {
+                        msg.innerHTML = `已偵測到您設定的電腦／雲端硬碟儲存檔「<strong>${escapeHtml(storagePrefs.bound_file_name)}</strong>」（目前已自動載入上次快取資料；點擊右側按鈕即可連通硬碟檔案雙向同步）。`;
+                    }
+                    if (banner) banner.style.display = 'flex';
+                }
+            }
+
+            if (storagePrefs.auto_cloud_url) {
+                await autoCheckCloudUrlSource(storagePrefs.auto_cloud_url, false);
+            }
+        }
+
         syncEffectiveRecords();
         filteredRecords = [...allRecords];
     }
@@ -1101,19 +1593,26 @@ function initFooyinAwardsApp() {
         });
         document.addEventListener('click', () => exportMenu.classList.remove('show'));
 
+        const openYearExpBtn = document.getElementById('open-year-export-modal');
+        if (openYearExpBtn) {
+            openYearExpBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                openExportOptionsModal('template-xlsx');
+            });
+        }
         document.getElementById('export-112-114-excel').addEventListener('click', (e) => {
             e.preventDefault();
-            export112To114TemplateExcel("112-114學年度填報資料_匯出.xlsx");
+            openExportOptionsModal('template-xlsx');
         });
         document.getElementById('export-112-114-csv').addEventListener('click', (e) => {
             e.preventDefault();
-            export112To114TemplateCSV("112-114學年度填報資料_匯出.csv");
+            openExportOptionsModal('template-csv');
         });
         const dlTemplateMenuBtn = document.getElementById('download-template-file');
         if (dlTemplateMenuBtn) {
             dlTemplateMenuBtn.addEventListener('click', (e) => {
                 e.preventDefault();
-                downloadSampleImportTemplate(true);
+                openExportOptionsModal('blank-template-xlsx');
             });
         }
         const exportPubExcelBtn = document.getElementById('export-public-excel');
@@ -1189,12 +1688,157 @@ function initFooyinAwardsApp() {
         });
 
         document.getElementById('btn-add-award').addEventListener('click', () => {
-            requireAdminUnlock(() => {
-                document.getElementById('add-modal').classList.add('show');
-            }, '新增學生獲獎紀錄請先完成管理員解鎖。');
+            document.getElementById('add-modal').classList.add('show');
         });
 
         document.getElementById('confirm-add-award').addEventListener('click', handleAddAwardRecord);
+
+        // 暫存審核區與電腦/雲端儲存設定按鈕綁定
+        const btnStagingCenter = document.getElementById('btn-staging-center');
+        if (btnStagingCenter) btnStagingCenter.addEventListener('click', openStagingModal);
+        const btnDiffGotoStaging = document.getElementById('btn-diff-goto-staging');
+        if (btnDiffGotoStaging) {
+            btnDiffGotoStaging.addEventListener('click', () => {
+                document.getElementById('diff-modal').classList.remove('show');
+                openStagingModal();
+            });
+        }
+        const btnStagingOpenStorage = document.getElementById('btn-staging-open-storage');
+        if (btnStagingOpenStorage) {
+            btnStagingOpenStorage.addEventListener('click', () => {
+                updateStorageUI();
+                document.getElementById('storage-settings-modal').classList.add('show');
+            });
+        }
+        const btnStagingSelectAll = document.getElementById('btn-staging-select-all');
+        if (btnStagingSelectAll) {
+            btnStagingSelectAll.addEventListener('click', () => {
+                const allUids = stagingRecords.map(s => s._stagingUid).filter(Boolean);
+                const allChecked = allUids.length > 0 && allUids.every(u => selectedStagingUids.has(u));
+                if (allChecked) selectedStagingUids.clear();
+                else allUids.forEach(u => selectedStagingUids.add(u));
+                renderStagingModalData();
+            });
+        }
+        const btnStagingRemoveSel = document.getElementById('btn-staging-remove-selected');
+        if (btnStagingRemoveSel) {
+            btnStagingRemoveSel.addEventListener('click', () => {
+                if (selectedStagingUids.size === 0) return;
+                removeStagingItems([...selectedStagingUids]);
+            });
+        }
+        const btnStagingClearAll = document.getElementById('btn-staging-clear-all');
+        if (btnStagingClearAll) {
+            btnStagingClearAll.addEventListener('click', () => {
+                if (!stagingRecords.length) return;
+                if (confirm(`確定要清空暫存區內全部 ${stagingRecords.length} 筆待審核資料嗎？`)) {
+                    removeStagingItems(stagingRecords.map(s => s._stagingUid));
+                }
+            });
+        }
+        const btnConfirmCommitStaging = document.getElementById('btn-confirm-commit-staging');
+        if (btnConfirmCommitStaging) {
+            btnConfirmCommitStaging.addEventListener('click', handleConfirmCommitStaging);
+        }
+
+        const btnStorageSettings = document.getElementById('btn-storage-settings');
+        if (btnStorageSettings) {
+            btnStorageSettings.addEventListener('click', () => {
+                updateStorageUI();
+                document.getElementById('storage-settings-modal').classList.add('show');
+            });
+        }
+        const btnBindNewFile = document.getElementById('btn-bind-new-storage-file');
+        if (btnBindNewFile) btnBindNewFile.addEventListener('click', handleBindNewStorageFile);
+        const btnBindExistingFile = document.getElementById('btn-bind-existing-storage-file');
+        if (btnBindExistingFile) btnBindExistingFile.addEventListener('click', handleBindExistingStorageFile);
+        const btnSyncFileNow = document.getElementById('btn-sync-from-file-now');
+        if (btnSyncFileNow) {
+            btnSyncFileNow.addEventListener('click', async () => {
+                if (!boundFileHandle) {
+                    await handleBindExistingStorageFile();
+                    return;
+                }
+                const ok = await readAndApplyFromFileHandle(boundFileHandle, true);
+                if (ok === true) {
+                    applyFilters(true);
+                    showToast(`已從「${boundFileHandle.name}」同步最新資料！`);
+                }
+            });
+        }
+        const btnDownloadBackup = document.getElementById('btn-download-sync-backup');
+        if (btnDownloadBackup) btnDownloadBackup.addEventListener('click', handleDownloadSyncBackup);
+        const fbSyncInput = document.getElementById('fallback-load-sync-file');
+        if (fbSyncInput) {
+            fbSyncInput.addEventListener('change', async (e) => {
+                const f = e.target.files && e.target.files[0];
+                if (!f) return;
+                try {
+                    const txt = await f.text();
+                    const parsed = JSON.parse(txt);
+                    if (parsed && parsed.schema === 'FooyinAwardsMasterSnapshot_v2') {
+                        storagePrefs.bound_file_name = f.name;
+                        applyMasterSnapshotObject(parsed, true);
+                        await saveMasterDatabaseSnapshot(false);
+                        applyFilters(true);
+                        showToast(`已成功載入「${f.name}」正式資料庫快照！`);
+                    } else {
+                        const rows = parseCSVorJSON(txt, f.name);
+                        enqueueRecordsToStaging(rows, `手動載入檔案 (${f.name})`, true);
+                    }
+                } catch (_) {
+                    alert('無法解析所選 JSON 同步檔，請確認檔案格式正確。');
+                }
+                e.target.value = '';
+            });
+        }
+        const btnSaveStorageCfg = document.getElementById('btn-save-storage-settings');
+        if (btnSaveStorageCfg) btnSaveStorageCfg.addEventListener('click', handleSaveStorageSettings);
+        const btnReconnectFs = document.getElementById('btn-reconnect-fs-handle');
+        if (btnReconnectFs) {
+            btnReconnectFs.addEventListener('click', async () => {
+                if (!boundFileHandle) return;
+                const ok = await readAndApplyFromFileHandle(boundFileHandle, true);
+                if (ok === true) {
+                    const banner = document.getElementById('storage-reconnect-banner');
+                    if (banner) banner.style.display = 'none';
+                    applyFilters(true);
+                    showToast(`已連通電腦/雲端儲存檔「${boundFileHandle.name}」並載入最新資料！`);
+                }
+            });
+        }
+        const btnResetLocalCache = document.getElementById('btn-reset-local-cache');
+        if (btnResetLocalCache) {
+            btnResetLocalCache.addEventListener('click', () => {
+                requireAdminUnlock(async () => {
+                    if (!confirm('確定要清除瀏覽器自訂修改快取並回復系統初始 509 筆基準資料嗎？（您電腦/雲端硬碟上的外部備份檔不會被刪除）')) return;
+                    await idbDel('master_snapshot');
+                    await idbDel('staging_queue');
+                    Object.keys(staticEditedPatchesMap).forEach(k => delete staticEditedPatchesMap[k]);
+                    saveStaticEditedPatches();
+                    staticDeletedKeysSet.clear();
+                    saveStaticDeletedSet();
+                    stagingRecords = [];
+                    selectedStagingUids.clear();
+                    activeEncryptedVault = window.ENCRYPTED_PII_VAULT || null;
+                    basePublicRecords = (window.INITIAL_AWARDS_DATA || []).map(r => deidentifyRecord(normalizeAwardRecord(r)));
+                    syncEffectiveRecords();
+                    updateStagingBadges();
+                    updateStorageUI();
+                    applyFilters();
+                    document.getElementById('storage-settings-modal').classList.remove('show');
+                    showToast('已回復系統初始基準資料庫！');
+                }, '重置本機資料庫快取請先完成管理員解鎖。');
+            });
+        }
+
+        // 自選學年度 (112~120) 匯出視窗事件綁定
+        ['export-year-mode', 'export-single-year', 'export-range-start', 'export-range-end', 'export-semester-filter', 'export-format-type', 'export-opt-use-page-filter'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('change', updateExportOptionsUI);
+        });
+        const btnExecCustomExport = document.getElementById('btn-execute-custom-export');
+        if (btnExecCustomExport) btnExecCustomExport.addEventListener('click', executeCustomYearExport);
 
         // 匯入資料視窗（直接開啟，相容公開與管理匯出檔匯入）
         document.getElementById('btn-import-award').addEventListener('click', () => {
@@ -1219,9 +1863,7 @@ function initFooyinAwardsApp() {
 
         const btnMergeAllDiff = document.getElementById('btn-merge-all-diff');
         if (btnMergeAllDiff) {
-            btnMergeAllDiff.addEventListener('click', () => {
-                requireAdminUnlock(handleMergeAllDiff, '將會議榮譽採納併入資料庫請先完成管理員解鎖。');
-            });
+            btnMergeAllDiff.addEventListener('click', handleMergeAllDiff);
         }
 
         const chartYearFilter = document.getElementById('chart-year-filter');
@@ -1229,7 +1871,7 @@ function initFooyinAwardsApp() {
             chartYearFilter.addEventListener('change', renderCharts);
         }
 
-        // 6 大頁籤視角切換器
+        // 7 大頁籤視角切換器
         document.querySelectorAll('.view-tab').forEach(tabBtn => {
             tabBtn.addEventListener('click', (e) => {
                 document.querySelectorAll('.view-tab').forEach(b => b.classList.remove('active'));
@@ -1243,6 +1885,8 @@ function initFooyinAwardsApp() {
                     openUnappliedModal();
                 } else if (tabKey === 'sources-lookup') {
                     openSourcesLookupModal();
+                } else if (tabKey === 'staging-area') {
+                    openStagingModal();
                 } else {
                     applyFilters();
                 }
@@ -1354,7 +1998,7 @@ function initFooyinAwardsApp() {
         filteredRecords = allRecords.filter(r => {
             if (activeTabKey === 'template-112-114') {
                 const rY = String(r["學年度"] || '').replace(/學年度/g, '').trim();
-                if (!["112", "113", "114"].includes(rY)) return false;
+                if (!SUPPORTED_ACAD_YEARS.includes(rY)) return false;
             } else if (activeTabKey === 'crawled-meetings') {
                 const src = String(r["資料來源"] || '');
                 const isMeetingOrWeb = src.includes('會議') || src.includes('官網') || src.includes('網站') || src.includes('行政') || src.includes('校務') || src.includes('抓取');
@@ -1865,6 +2509,7 @@ function initFooyinAwardsApp() {
         persistStaticEditedPatch(targetPub);
 
         syncEffectiveRecords();
+        await saveMasterDatabaseSnapshot(true);
         applyFilters(true);
         return normalizedFull;
     }
@@ -1895,11 +2540,26 @@ function initFooyinAwardsApp() {
         }
     }
 
-    function openDetailModal(recordId) {
-        const record = allRecords.find(r => getRecordUid(r) === String(recordId) || String(r["編號"]) === String(recordId));
-        if (!record) return;
-        activeDetailRecordId = getRecordUid(record);
-        detailModalRenderedUnlocked = isAdminUnlocked;
+    function openDetailModal(recordId, isStagingEdit = false) {
+        let record = null;
+        let canEditPiiNow = isAdminUnlocked;
+        if (isStagingEdit) {
+            const stBase = stagingRecords.find(s => String(s._stagingUid) === String(recordId));
+            if (!stBase) return;
+            activeEditingStagingUid = String(stBase._stagingUid);
+            activeDetailRecordId = null;
+            const fullStPii = stagingFullPiiMap[activeEditingStagingUid] || {};
+            canEditPiiNow = isAdminUnlocked || Object.keys(fullStPii).length > 0;
+            record = canEditPiiNow ? { ...stBase, ...fullStPii } : stBase;
+        } else {
+            record = allRecords.find(r => getRecordUid(r) === String(recordId) || String(r["編號"]) === String(recordId));
+            if (!record) return;
+            activeDetailRecordId = getRecordUid(record);
+            activeEditingStagingUid = null;
+        }
+        detailModalRenderedUnlocked = canEditPiiNow;
+        const btnDelInModal = document.getElementById('btn-detail-delete-record');
+        if (btnDelInModal) btnDelInModal.style.display = isStagingEdit ? 'none' : 'inline-flex';
 
         const evHref = safeHref(record["佐證連結"]);
         const amtNum = Number(record["獎助金金額"]) || 0;
@@ -1922,21 +2582,26 @@ function initFooyinAwardsApp() {
         const collegeOpts = ['護理學院', '醫學與健康學院', '環境與生命學院', '人文與管理學院'];
         const allDepts = Object.keys(window.FOOYIN_DEPT_CODE_MAP || {});
 
-        const piiReadonlyAttr = isAdminUnlocked ? '' : 'readonly';
-        const piiReadonlyClass = isAdminUnlocked ? '' : 'input-locked-readonly';
-        const piiLockHint = isAdminUnlocked ? '' : ' <small style="color:#D97706;">(解鎖後可修改)</small>';
+        const piiReadonlyAttr = canEditPiiNow ? '' : 'readonly';
+        const piiReadonlyClass = canEditPiiNow ? '' : 'input-locked-readonly';
+        const piiLockHint = canEditPiiNow ? '' : ' <small style="color:#D97706;">(解鎖後可修改)</small>';
 
-        const unlockStripHtml = isAdminUnlocked
+        const unlockStripHtml = isStagingEdit
             ? `<div class="detail-unlock-strip unlocked">
-                   <span><i class="fa-solid fa-unlock-keyhole"></i> <strong>管理員完整編輯模式：</strong>所有欄位（含學生姓名、學號、獎助金額與領獎狀態）皆可直接修正並點選下方「儲存修正並送出」。</span>
-                   <span class="badge badge-teal">流水號 #${escapeHtml(record["編號"])}</span>
+                   <span><i class="fa-solid fa-clipboard-check"></i> <strong>暫存區紀錄檢視與修正：</strong>您可於此檢查並修正所有欄位與獎助金額，按下方「儲存修正並送出」更新暫存資料，再於暫存區按確認寫入正式資料庫。</span>
+                   <span class="badge badge-teal">暫存編號 ${escapeHtml(activeEditingStagingUid)}</span>
                </div>`
-            : `<div class="detail-unlock-strip locked">
-                   <span><i class="fa-solid fa-shield-halved"></i> <strong>目前為去識別化檢視：</strong>您可直接核定獎助金額、領獎狀態與賽事欄位後按「儲存修正並送出」（系統將驗證管理員密碼）；若需修改學生姓名或學號請先點選右側解鎖。</span>
-                   <button type="button" class="btn btn-warning btn-sm" id="btn-detail-unlock-pii">
-                       <i class="fa-solid fa-key"></i> 解鎖編輯完整個資
-                   </button>
-               </div>`;
+            : (canEditPiiNow
+                ? `<div class="detail-unlock-strip unlocked">
+                       <span><i class="fa-solid fa-unlock-keyhole"></i> <strong>管理員完整編輯模式：</strong>所有欄位（含學生姓名、學號、獎助金額與領獎狀態）皆可直接修正並點選下方「儲存修正並送出」。</span>
+                       <span class="badge badge-teal">流水號 #${escapeHtml(record["編號"])}</span>
+                   </div>`
+                : `<div class="detail-unlock-strip locked">
+                       <span><i class="fa-solid fa-shield-halved"></i> <strong>目前為去識別化檢視：</strong>您可直接核定獎助金額、領獎狀態與賽事欄位後按「儲存修正並送出」（系統將驗證管理員密碼）；若需修改學生姓名或學號請先點選右側解鎖。</span>
+                       <button type="button" class="btn btn-warning btn-sm" id="btn-detail-unlock-pii">
+                           <i class="fa-solid fa-key"></i> 解鎖編輯完整個資
+                       </button>
+                   </div>`);
 
         const evLinkActionHtml = (evHref !== '#' && evHref !== '#protected-evidence')
             ? `<a href="${escapeHtml(evHref)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="margin-top:4px; align-self:flex-start;"><i class="fa-solid fa-arrow-up-right-from-square"></i> 開啟目前佐證網址</a>`
@@ -1979,9 +2644,9 @@ function initFooyinAwardsApp() {
                 </div>
 
                 <div class="form-group">
-                    <label>學年度 *</label>
+                    <label>學年度 (112~120) *</label>
                     <select id="detail-edit-year">
-                        ${['115學年度', '114學年度', '113學年度', '112學年度'].map(y => `<option value="${y}" ${curYear === y ? 'selected' : ''}>${y}</option>`).join('')}
+                        ${SUPPORTED_ACAD_YEAR_DESC.map(y => `<option value="${y}" ${curYear === y ? 'selected' : ''}>${y}</option>`).join('')}
                     </select>
                 </div>
                 <div class="form-group">
@@ -2128,9 +2793,10 @@ function initFooyinAwardsApp() {
         const btnUnlockInDetail = document.getElementById('btn-detail-unlock-pii');
         if (btnUnlockInDetail) {
             btnUnlockInDetail.addEventListener('click', () => {
-                const targetUid = activeDetailRecordId;
+                const isStg = Boolean(activeEditingStagingUid);
+                const targetUid = isStg ? activeEditingStagingUid : activeDetailRecordId;
                 requireAdminUnlock(() => {
-                    openDetailModal(targetUid);
+                    openDetailModal(targetUid, isStg);
                 }, '解鎖後即可檢視與編輯完整學生姓名、學號、班級與母校資料。');
             });
         }
@@ -2171,8 +2837,9 @@ function initFooyinAwardsApp() {
     }
 
     function handleSaveDetailModal() {
-        if (!activeDetailRecordId) return;
-        const targetUid = activeDetailRecordId;
+        if (!activeDetailRecordId && !activeEditingStagingUid) return;
+        const isStagingMode = Boolean(activeEditingStagingUid);
+        const targetUid = isStagingMode ? activeEditingStagingUid : activeDetailRecordId;
         const wasUnlockedWhenRendered = detailModalRenderedUnlocked;
 
         const getVal = (id, fallback = '') => {
@@ -2223,6 +2890,41 @@ function initFooyinAwardsApp() {
             collectedUpdates["佐證連結"] = urlInputVal;
         } else if (urlInputVal !== '#protected-evidence') {
             collectedUpdates["佐證連結"] = urlInputVal;
+        }
+
+        if (isStagingMode) {
+            const stIdx = stagingRecords.findIndex(s => String(s._stagingUid) === String(targetUid));
+            if (stIdx !== -1) {
+                const prev = stagingRecords[stIdx];
+                const prevFullPii = stagingFullPiiMap[targetUid] || {};
+                const merged = normalizeAwardRecord({ ...prev, ...prevFullPii, ...collectedUpdates }, true);
+                merged["活動名稱"] = collectedUpdates["活動名稱"];
+                merged["競賽或活動名稱"] = collectedUpdates["活動名稱"];
+                merged["競賽項目"] = collectedUpdates["競賽項目"];
+                merged["參賽項目或作品名稱"] = collectedUpdates["競賽項目"];
+                merged["獲獎名次"] = collectedUpdates["獲獎名次"];
+                merged["榮譽獎項"] = collectedUpdates["獲獎名次"];
+                merged["學生所屬系科 - 系所代碼"] = resolveDeptCode(merged["系所名稱"], merged["學生所屬系科 - 系所代碼"]);
+
+                stagingFullPiiMap[targetUid] = {
+                    "獲獎學生": merged["獲獎學生"] || '無',
+                    "學生學號": merged["學生學號"] || '無',
+                    "學制班級": merged["學制班級"] || '無',
+                    "原畢業學校": merged["原畢業學校"] || '無',
+                    "佐證連結": merged["佐證連結"] || '無'
+                };
+                const deidStg = deidentifyRecord(merged);
+                deidStg._stagingUid = prev._stagingUid;
+                deidStg._stagingOrigin = prev._stagingOrigin;
+                deidStg._stagingAction = checkStagingActionType(deidStg);
+                stagingRecords[stIdx] = deidStg;
+                saveStagingQueueOnly();
+                renderStagingModalData();
+            }
+            activeEditingStagingUid = null;
+            document.getElementById('detail-modal').classList.remove('show');
+            showToast('已更新暫存區紀錄內容！確認無誤後可點選寫入正式資料庫。');
+            return;
         }
 
         requireAdminUnlock(async () => {
@@ -2447,6 +3149,7 @@ function initFooyinAwardsApp() {
         }
 
         syncEffectiveRecords();
+        await saveMasterDatabaseSnapshot(true);
         applyFilters(true);
 
         if (uidsToDelete.length === 1 && targetRecords[0]) {
@@ -2637,7 +3340,7 @@ function initFooyinAwardsApp() {
         renderSourcesLookupUI();
     }
 
-    // 經輔英科技大學公共事務室校園新聞專區 (https://epo.fy.edu.tw/) 實證查核之公開獲獎公告
+    // 經輔英科技大學公共事務室校園新聞專區 (https://epo.fy.edu.tw/) 逐篇實證查核並與表 4-8-1 交叉核對之公開獲獎公告
     const VERIFIED_EPO_PUBLIC_RECORDS = [
         {
             "識別號": "FY115-001",
@@ -2671,7 +3374,7 @@ function initFooyinAwardsApp() {
             "發放與領獎狀態": "尚待核定",
             "原畢業學校": "無",
             "佐證連結": "https://epo.fy.edu.tw/p/406-1058-76437,r1306.php?Lang=zh-tw",
-            "備註": "輔英校園新聞 2026-08-06 查證（115學年度上學期最新國際賽獲獎）"
+            "備註": "輔英校園新聞 2026-08-06 查證（115學年度上學期最新國際賽獲獎，已收錄於系統基準庫）"
         },
         {
             "識別號": "EPO-76254-1",
@@ -2705,10 +3408,46 @@ function initFooyinAwardsApp() {
             "發放與領獎狀態": "尚待核定",
             "原畢業學校": "長庚科技大學五專部",
             "佐證連結": "https://epo.fy.edu.tw/p/406-1058-76254,r1306.php?Lang=zh-tw",
-            "備註": "輔英校園新聞 2026-07-08 查證（112-114 填報表於 5 月結算後新增之暑期國際賽事）"
+            "備註": "輔英校園新聞 2026-07-08 查證（表 4-8-1 於 5 月結算後新增之暑期國際賽事）"
         },
         {
-            "識別號": "EPO-75863-1",
+            "識別號": "EPO-76254-2",
+            "學年度": "114學年度",
+            "學期": "下",
+            "會議記錄時間": "2026-07-08",
+            "活動類別": "國際(外)",
+            "活動主辦單位": "馬來西亞國際美容博覽會(IBE)、馬來西亞國際技職協會(MIVA)",
+            "資料來源": "學校公開網頁 (輔英新聞)",
+            "所屬學院": "醫學與健康學院",
+            "系所名稱": "健康美容系",
+            "學生所屬系科 - 系所代碼": "健康美容系 - 3839",
+            "學制班級": "無",
+            "獲獎學生": "蔡莉鈞",
+            "學生學號": "無",
+            "指導老師": "柯美華 副主任",
+            "競賽層級": "國際競賽",
+            "活動名稱": "2026年第四屆MIVA世界卓越盃國際賽",
+            "競賽或活動名稱": "2026年第四屆MIVA世界卓越盃國際賽",
+            "競賽項目": "芳療類《七大元素能量覺醒》",
+            "參賽項目或作品名稱": "芳療類《七大元素能量覺醒》",
+            "個人/團體競賽": "個人競賽",
+            "人數(男)": "0",
+            "人數(女)": "1",
+            "是否獲獎": "是",
+            "獲獎名次": "金牌",
+            "榮譽獎項": "金牌",
+            "活動起始日期": "2026/07/01",
+            "活動結束日期": "2026/07/08",
+            "獎助金金額": 0,
+            "發放與領獎狀態": "尚待核定",
+            "原畢業學校": "高雄市私立三信高級家事商業職業學校",
+            "佐證連結": "https://epo.fy.edu.tw/p/406-1058-76254,r1306.php?Lang=zh-tw",
+            "備註": "輔英校園新聞 2026-07-08 查證（健康美容系獲芳療類金牌）"
+        },
+        {
+            "識別號": "421568",
+            "target_update_id": "421568",
+            "related_table_ids": "421568, 421569, 421570, 421572, 421573",
             "學年度": "114學年度",
             "學期": "下",
             "會議記錄時間": "2026-06-03",
@@ -2718,36 +3457,72 @@ function initFooyinAwardsApp() {
             "所屬學院": "人文與管理學院",
             "系所名稱": "休閒與遊憩事業管理系",
             "學生所屬系科 - 系所代碼": "休閒與遊憩事業管理系 - 1457",
-            "學制班級": "無",
+            "學制班級": "四技2年1班",
             "獲獎學生": "姜曼羚",
             "學生學號": "無",
             "指導老師": "梁國禎、梁豐君 教練",
             "競賽層級": "體育競賽",
             "活動名稱": "115年全國身心障礙國民運動會",
             "競賽或活動名稱": "115年全國身心障礙國民運動會",
-            "競賽項目": "帕拉游泳（100公尺蝶式、100公尺仰式等五項）",
-            "參賽項目或作品名稱": "帕拉游泳（100公尺蝶式、100公尺仰式等五項）",
+            "競賽項目": "肢體障礙S9級女子組50公尺、100公尺、400公尺自由式、100公尺仰式及200公尺混合式",
+            "參賽項目或作品名稱": "肢體障礙S9級女子組50公尺、100公尺、400公尺自由式、100公尺仰式及200公尺混合式",
             "個人/團體競賽": "個人競賽",
             "人數(男)": "0",
             "人數(女)": "1",
             "是否獲獎": "是",
             "獲獎名次": "五金（三破全國紀錄）",
             "榮譽獎項": "五金（三破全國紀錄）",
-            "活動起始日期": "2026/05/28",
-            "活動結束日期": "2026/06/03",
+            "活動起始日期": "2026/05/21",
+            "活動結束日期": "2026/05/24",
             "獎助金金額": 0,
             "發放與領獎狀態": "尚待核定",
-            "原畢業學校": "無",
+            "原畢業學校": "高雄市立文山高級中學",
             "佐證連結": "https://epo.fy.edu.tw/p/406-1058-75863,r1306.php?Lang=zh-tw",
-            "備註": "輔英校園新聞 2026-06-03 查證（全國身心障礙國民運動會勇奪五金並三破全國紀錄）"
+            "備註": "輔英校園新聞 2026-06-03 查證（對應補充表 4-8-1 識別號 #421568~#421573 未登載之選手、班級與教練資訊）"
         },
         {
-            "識別號": "EPO-75509-1",
+            "識別號": "421564",
+            "target_update_id": "421564",
             "學年度": "114學年度",
             "學期": "下",
             "會議記錄時間": "2026-05-18",
             "活動類別": "全國",
-            "活動主辦單位": "教育部技術及職業教育司、朝陽科技大學",
+            "活動主辦單位": "教育部",
+            "資料來源": "學校公開網頁 (輔英新聞)",
+            "所屬學院": "醫學與健康學院",
+            "系所名稱": "醫學檢驗生物技術系",
+            "學生所屬系科 - 系所代碼": "醫學檢驗生物技術系 - 1448",
+            "學制班級": "無",
+            "獲獎學生": "杜佩芸",
+            "學生學號": "無",
+            "指導老師": "葉耀宗 教授、邱敏熙 助理教授",
+            "競賽層級": "國內競賽",
+            "活動名稱": "2026年全國技專校院學生實務專題製作競賽暨成果展",
+            "競賽或活動名稱": "2026年全國技專校院學生實務專題製作競賽暨成果展",
+            "競賽項目": "生技醫農群：以腸道菌相組成之改變開發可預測心血管疾病風險的IVD試劑組",
+            "參賽項目或作品名稱": "生技醫農群：以腸道菌相組成之改變開發可預測心血管疾病風險的IVD試劑組",
+            "個人/團體競賽": "個人競賽",
+            "人數(男)": "0",
+            "人數(女)": "1",
+            "是否獲獎": "是",
+            "獲獎名次": "第一名",
+            "榮譽獎項": "第一名",
+            "活動起始日期": "2026/05/14",
+            "活動結束日期": "2026/05/15",
+            "獎助金金額": 0,
+            "發放與領獎狀態": "尚待核定",
+            "原畢業學校": "輔英科技大學",
+            "佐證連結": "https://epo.fy.edu.tw/p/406-1058-75509,r1306.php?Lang=zh-tw",
+            "備註": "輔英校園新聞 2026-05-18 查證（對應補充表 4-8-1 識別號 #421564 生技醫農群第一名之獲獎學生與指導教授）"
+        },
+        {
+            "識別號": "421565",
+            "target_update_id": "421565",
+            "學年度": "114學年度",
+            "學期": "下",
+            "會議記錄時間": "2026-05-18",
+            "活動類別": "全國",
+            "活動主辦單位": "教育部",
             "資料來源": "學校公開網頁 (輔英新聞)",
             "所屬學院": "醫學與健康學院",
             "系所名稱": "醫學檢驗生物技術系",
@@ -2759,8 +3534,8 @@ function initFooyinAwardsApp() {
             "競賽層級": "國內競賽",
             "活動名稱": "2026年全國技專校院學生實務專題製作競賽暨成果展",
             "競賽或活動名稱": "2026年全國技專校院學生實務專題製作競賽暨成果展",
-            "競賽項目": "生技醫農群：利用深共熔溶劑配合液相微萃取法快速偵測牛奶中殘留四環黴素",
-            "參賽項目或作品名稱": "生技醫農群：利用深共熔溶劑配合液相微萃取法快速偵測牛奶中殘留四環黴素",
+            "競賽項目": "生技醫農群：利用深共熔溶劑配合液相—液相微萃取法萃取牛奶中殘留四環黴素並利用HPLC-UV快速偵測",
+            "參賽項目或作品名稱": "生技醫農群：利用深共熔溶劑配合液相—液相微萃取法萃取牛奶中殘留四環黴素並利用HPLC-UV快速偵測",
             "個人/團體競賽": "團體競賽",
             "人數(男)": "0",
             "人數(女)": "2",
@@ -2773,9 +3548,354 @@ function initFooyinAwardsApp() {
             "發放與領獎狀態": "尚待核定",
             "原畢業學校": "輔英科技大學五專部",
             "佐證連結": "https://epo.fy.edu.tw/p/406-1058-75509,r1306.php?Lang=zh-tw",
-            "備註": "輔英校園新聞 2026-05-18 查證（補充表 4-8-1 識別號 421562 之獲獎學生與指導教授資訊）"
+            "備註": "輔英校園新聞 2026-05-18 查證（對應補充表 4-8-1 識別號 #421565 生技醫農群第二名之獲獎學生與指導教授）"
         }
     ];
+
+    // =========================================================
+    // 待審核資料暫存區 (Staging Area) 核心引擎
+    // 網路新增 / 自行建檔 / 檔案與雲端匯入 -> 先進暫存區 -> 檢視修正 -> 按確認才進正式資料庫
+    // =========================================================
+    function findMatchingFormalRecord(rec) {
+        const candId = String(rec.target_update_id || rec["識別號"] || '').replace(/^#+/, '').trim();
+        if (!candId) return null;
+        return basePublicRecords.find(r =>
+            String(r["識別號"] || '').replace(/^#+/, '').trim() === candId ||
+            String(r["編號"] || '').trim() === candId
+        ) || null;
+    }
+
+    function checkStagingActionType(rec) {
+        return findMatchingFormalRecord(rec) ? 'UPDATE' : 'ADD';
+    }
+
+    function isRecordIdenticalToFormalDb(normRec) {
+        const existing = findMatchingFormalRecord(normRec);
+        if (existing) {
+            const existingNum = String(existing["編號"]);
+            const existingFullStudent = (sessionFullRecordsMap[existingNum] && sessionFullRecordsMap[existingNum]["獲獎學生"]) ||
+                (decryptedPiiMap && decryptedPiiMap[existingNum] && decryptedPiiMap[existingNum]["獲獎學生"]) ||
+                existing["獲獎學生"] || '無';
+            const incomingStudentMasked = maskStudentNames(normRec["獲獎學生"]);
+            const existingStudentMasked = maskStudentNames(existingFullStudent);
+            const sameTeacher = String(existing["指導老師"] || '無').trim() === String(normRec["指導老師"] || '無').trim();
+            const sameEvent = String(existing["活動名稱"] || existing["競賽或活動名稱"] || '').trim() === String(normRec["活動名稱"] || normRec["競賽或活動名稱"] || '').trim();
+            const sameWork = String(existing["競賽項目"] || existing["參賽項目或作品名稱"] || '').trim() === String(normRec["競賽項目"] || normRec["參賽項目或作品名稱"] || '').trim();
+            const sameAmt = Number(existing["獎助金金額"] || 0) === Number(normRec["獎助金金額"] || 0);
+            const sameStatus = String(existing["發放與領獎狀態"] || '').trim() === String(normRec["發放與領獎狀態"] || '').trim();
+            if (incomingStudentMasked === existingStudentMasked && sameTeacher && sameEvent && sameWork && sameAmt && sameStatus) {
+                return true;
+            }
+            return false;
+        }
+        const evName = normRec["競賽或活動名稱"] || normRec["活動名稱"] || '';
+        const wkName = normRec["參賽項目或作品名稱"] || normRec["競賽項目"] || '';
+        return basePublicRecords.some(r =>
+            (r["競賽或活動名稱"] || r["活動名稱"]) === evName &&
+            (r["參賽項目或作品名稱"] || r["競賽項目"]) === wkName &&
+            String(r["學年度"]) === String(normRec["學年度"]) &&
+            String(r["系所名稱"]) === String(normRec["系所名稱"]) &&
+            String(r["獲獎名次"] || r["榮譽獎項"]) === String(normRec["獲獎名次"] || normRec["榮譽獎項"]) &&
+            String(r["活動起始日期"] || '') === String(normRec["活動起始日期"] || '') &&
+            maskStudentNames(r["獲獎學生"]) === maskStudentNames(normRec["獲獎學生"])
+        );
+    }
+
+    function isRecordAlreadyInStaging(normRec) {
+        const candId = String(normRec.target_update_id || normRec["識別號"] || '').replace(/^#+/, '').trim();
+        const evName = normRec["競賽或活動名稱"] || normRec["活動名稱"] || '';
+        const wkName = normRec["參賽項目或作品名稱"] || normRec["競賽項目"] || '';
+        return stagingRecords.some(s => {
+            const sId = String(s.target_update_id || s["識別號"] || '').replace(/^#+/, '').trim();
+            if (candId && sId && candId === sId) return true;
+            return (s["競賽或活動名稱"] || s["活動名稱"]) === evName &&
+                (s["參賽項目或作品名稱"] || s["競賽項目"]) === wkName &&
+                String(s["學年度"]) === String(normRec["學年度"]) &&
+                String(s["系所名稱"]) === String(normRec["系所名稱"]) &&
+                maskStudentNames(s["獲獎學生"]) === maskStudentNames(normRec["獲獎學生"]);
+        });
+    }
+
+    function updateStagingBadges() {
+        const count = stagingRecords.length;
+        const headerBadge = document.getElementById('staging-badge-count');
+        const tabBadge = document.getElementById('tab-staging-count');
+        const headerBtn = document.getElementById('btn-staging-center');
+        if (headerBadge) headerBadge.textContent = String(count);
+        if (tabBadge) tabBadge.textContent = String(count);
+        if (headerBtn) headerBtn.classList.toggle('has-items', count > 0);
+    }
+
+    function enqueueRecordsToStaging(rawList, originLabel = '手動匯入', autoOpenModal = true) {
+        let added = 0, skippedExact = 0, skippedDup = 0;
+        (rawList || []).forEach((item, idx) => {
+            if (!item || typeof item !== 'object') return;
+            const norm = (item["競賽或活動名稱"] !== undefined && item["學期"] !== undefined)
+                ? normalizeAwardRecord(item, true)
+                : mapImportedRowToRecord(item, originLabel);
+            if (item.target_update_id) {
+                norm.target_update_id = String(item.target_update_id);
+                if (!norm["識別號"]) norm["識別號"] = String(item.target_update_id);
+            }
+            const evName = norm["競賽或活動名稱"] || norm["活動名稱"] || '';
+            if (!evName) return;
+
+            if (isRecordIdenticalToFormalDb(norm)) {
+                skippedExact++;
+                return;
+            }
+            if (isRecordAlreadyInStaging(norm)) {
+                skippedDup++;
+                return;
+            }
+
+            const stUid = `STG-${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${idx}`;
+            if (!isMaskedPiiString(norm["獲獎學生"]) || !isMaskedPiiString(norm["學生學號"])) {
+                stagingFullPiiMap[stUid] = {
+                    "獲獎學生": norm["獲獎學生"] || '無',
+                    "學生學號": norm["學生學號"] || '無',
+                    "學制班級": norm["學制班級"] || '無',
+                    "原畢業學校": norm["原畢業學校"] || '無',
+                    "佐證連結": norm["佐證連結"] || '無'
+                };
+            }
+            const deidCopy = deidentifyRecord(norm);
+            deidCopy._stagingUid = stUid;
+            deidCopy._stagingOrigin = originLabel;
+            deidCopy._stagingAction = checkStagingActionType(norm);
+            if (norm.target_update_id) deidCopy.target_update_id = norm.target_update_id;
+
+            stagingRecords.unshift(deidCopy);
+            selectedStagingUids.add(stUid);
+            added++;
+        });
+
+        saveStagingQueueOnly();
+        updateStorageUI();
+        if (document.getElementById('staging-modal') && document.getElementById('staging-modal').classList.contains('show')) {
+            renderStagingModalData();
+        }
+        if (document.getElementById('diff-modal') && document.getElementById('diff-modal').classList.contains('show') && currentDiffData) {
+            refreshClientDiffSummary();
+            renderDiffModalData();
+        }
+        if (autoOpenModal && added > 0) {
+            openStagingModal();
+        }
+        return { added, skippedExact, skippedDup };
+    }
+
+    function openStagingModal() {
+        updateStorageUI();
+        renderStagingModalData();
+        const modal = document.getElementById('staging-modal');
+        if (modal) modal.classList.add('show');
+    }
+
+    function renderStagingModalData() {
+        updateStagingBadges();
+        let newCnt = 0, updCnt = 0;
+        stagingRecords.forEach(s => {
+            s._stagingAction = checkStagingActionType(s);
+            if (s._stagingAction === 'UPDATE') updCnt++;
+            else newCnt++;
+        });
+
+        // 清理不存在於暫存清單的勾選 ID
+        const validSet = new Set(stagingRecords.map(s => s._stagingUid));
+        [...selectedStagingUids].forEach(u => {
+            if (!validSet.has(u)) selectedStagingUids.delete(u);
+        });
+
+        const totalEl = document.getElementById('staging-total-count');
+        const newEl = document.getElementById('staging-new-count');
+        const updEl = document.getElementById('staging-update-count');
+        const selEl = document.getElementById('staging-selected-count');
+        const btnCommit = document.getElementById('btn-confirm-commit-staging');
+
+        if (totalEl) totalEl.textContent = String(stagingRecords.length);
+        if (newEl) newEl.textContent = String(newCnt);
+        if (updEl) updEl.textContent = String(updCnt);
+        if (selEl) selEl.textContent = String(selectedStagingUids.size);
+        if (btnCommit) {
+            btnCommit.disabled = selectedStagingUids.size === 0;
+            btnCommit.innerHTML = `<i class="fa-solid fa-database"></i> 確認無誤，將勾選資料寫入正式資料庫 (${selectedStagingUids.size} 筆)`;
+        }
+
+        const tbody = document.getElementById('staging-table-body');
+        if (!tbody) return;
+        tbody.innerHTML = '';
+
+        if (stagingRecords.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; padding: 34px; color:#64748B;">
+                <i class="fa-solid fa-clipboard-check" style="font-size:22px; color:#0D9488; margin-bottom:6px; display:block;"></i>
+                目前暫存審核區沒有待確認之資料。<br>
+                <small>當您從「網路 LOOK / 比對中心」、「自行建檔（新增獲獎紀錄）」或「匯入資料」新增紀錄時，皆會先送至此處供您檢視確認！</small>
+            </td></tr>`;
+            return;
+        }
+
+        stagingRecords.forEach(s => {
+            const uid = s._stagingUid;
+            const checked = selectedStagingUids.has(uid);
+            const fullPii = stagingFullPiiMap[uid] || {};
+            const dispStudent = (isAdminUnlocked && fullPii["獲獎學生"]) ? fullPii["獲獎學生"] : (s["獲獎學生"] || '無');
+            const dispStuId = (isAdminUnlocked && fullPii["學生學號"]) ? fullPii["學生學號"] : (s["學生學號"] || '無');
+            const targetId = s.target_update_id || s["識別號"] || '';
+            const actionBadge = s._stagingAction === 'UPDATE'
+                ? `<span class="badge badge-warning">🔄 更新 #${escapeHtml(targetId)}</span>`
+                : `<span class="badge badge-teal">🆕 新增入庫</span>`;
+            const amt = Number(s["獎助金金額"] || 0);
+
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td style="text-align:center;">
+                    <input type="checkbox" class="staging-row-chk" data-uid="${escapeHtml(uid)}" ${checked ? 'checked' : ''} style="width:16px; height:16px; cursor:pointer;">
+                </td>
+                <td>
+                    ${actionBadge}<br>
+                    <small style="color:#64748B;">${escapeHtml(s._stagingOrigin || '暫存來源')}</small>
+                </td>
+                <td><strong>${escapeHtml(s["學年度"] || '')}</strong><br><small>${escapeHtml(s["學期"] || '')}學期</small></td>
+                <td><strong>${escapeHtml(s["所屬學院"] || '')}</strong><br><small>${escapeHtml(s["系所名稱"] || '')}</small></td>
+                <td>
+                    <strong>${escapeHtml(s["活動名稱"] || s["競賽或活動名稱"] || '')}</strong><br>
+                    <small class="text-muted">${escapeHtml(s["競賽項目"] || s["參賽項目或作品名稱"] || '')}</small>
+                </td>
+                <td><strong>${escapeHtml(dispStudent)}</strong><br><small class="text-muted">學號: ${escapeHtml(dispStuId)}</small></td>
+                <td><span class="badge badge-gold">${escapeHtml(s["獲獎名次"] || s["榮譽獎項"] || '')}</span></td>
+                <td>
+                    <strong class="text-gold">${amt > 0 ? 'NT$ ' + amt.toLocaleString() : '尚待核定'}</strong><br>
+                    <small>${escapeHtml(s["發放與領獎狀態"] || '尚待核定')}</small>
+                </td>
+                <td><span class="badge badge-info">${escapeHtml(s["資料來源"] || '無')}</span></td>
+                <td>
+                    <div style="display:flex; gap:5px; flex-wrap:wrap;">
+                        <button type="button" class="btn btn-secondary btn-sm btn-stg-edit" data-uid="${escapeHtml(uid)}" title="檢視並修正此筆暫存欄位">
+                            <i class="fa-solid fa-pen-to-square"></i> 編修
+                        </button>
+                        <button type="button" class="btn btn-success btn-sm btn-stg-commit-one" data-uid="${escapeHtml(uid)}" title="確認此筆無誤，直接寫入正式資料庫">
+                            <i class="fa-solid fa-check"></i> 確認入庫
+                        </button>
+                        <button type="button" class="btn btn-outline-danger btn-sm btn-stg-remove-one" data-uid="${escapeHtml(uid)}" title="從暫存區移除">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                    </div>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        tbody.querySelectorAll('.staging-row-chk').forEach(chk => {
+            chk.addEventListener('change', (e) => {
+                const u = e.currentTarget.dataset.uid;
+                if (e.currentTarget.checked) selectedStagingUids.add(u);
+                else selectedStagingUids.delete(u);
+                renderStagingModalData();
+            });
+        });
+        tbody.querySelectorAll('.btn-stg-edit').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                openDetailModal(e.currentTarget.dataset.uid, true);
+            });
+        });
+        tbody.querySelectorAll('.btn-stg-commit-one').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const u = e.currentTarget.dataset.uid;
+                commitStagingUidsToFormalDb([u]);
+            });
+        });
+        tbody.querySelectorAll('.btn-stg-remove-one').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const u = e.currentTarget.dataset.uid;
+                removeStagingItems([u]);
+            });
+        });
+    }
+
+    function removeStagingItems(uids) {
+        const rmSet = new Set((uids || []).map(String));
+        stagingRecords = stagingRecords.filter(s => !rmSet.has(String(s._stagingUid)));
+        rmSet.forEach(u => {
+            selectedStagingUids.delete(u);
+            delete stagingFullPiiMap[u];
+        });
+        saveStagingQueueOnly();
+        renderStagingModalData();
+        if (document.getElementById('diff-modal') && document.getElementById('diff-modal').classList.contains('show') && currentDiffData) {
+            refreshClientDiffSummary();
+            renderDiffModalData();
+        }
+    }
+
+    function commitStagingUidsToFormalDb(uids) {
+        const targetSet = new Set((uids || []).map(String).filter(Boolean));
+        const toCommit = stagingRecords.filter(s => targetSet.has(String(s._stagingUid)));
+        if (!toCommit.length) {
+            alert('請先勾選至少一筆確認無誤的暫存資料！');
+            return;
+        }
+
+        requireAdminUnlock(async () => {
+            const fullPayloadRecords = toCommit.map(s => {
+                const uid = s._stagingUid;
+                const fullPii = stagingFullPiiMap[uid] || {};
+                const copy = { ...s, ...fullPii };
+                if (copy.target_update_id) {
+                    copy["識別號"] = String(copy.target_update_id);
+                }
+                delete copy._stagingUid;
+                delete copy._stagingOrigin;
+                delete copy._stagingAction;
+                delete copy.target_update_id;
+                delete copy.related_table_ids;
+                return copy;
+            });
+
+            let stats = { added: 0, updated: 0, skipped: 0 };
+            try {
+                const resp = await fetch('/api/import-awards', {
+                    method: 'POST',
+                    headers: authHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({ records: fullPayloadRecords })
+                });
+                if (resp.ok) {
+                    const res = await resp.json();
+                    stats = { added: res.added_count || 0, updated: res.updated_count || 0, skipped: res.skipped_count || 0 };
+                    await fetchAwardsData();
+                } else {
+                    stats = upsertRecordsIntoMemory(fullPayloadRecords);
+                }
+            } catch (_) {
+                stats = upsertRecordsIntoMemory(fullPayloadRecords);
+            }
+
+            // 從暫存區移除已正式入庫項目
+            stagingRecords = stagingRecords.filter(s => !targetSet.has(String(s._stagingUid)));
+            targetSet.forEach(u => {
+                selectedStagingUids.delete(u);
+                delete stagingFullPiiMap[u];
+            });
+
+            syncEffectiveRecords();
+            await saveMasterDatabaseSnapshot(true);
+            renderStagingModalData();
+            if (currentDiffData) {
+                refreshClientDiffSummary();
+                renderDiffModalData();
+            }
+            applyFilters(true);
+
+            if (stagingRecords.length === 0) {
+                document.getElementById('staging-modal').classList.remove('show');
+            }
+            showToast(`正式入庫完成！新增 ${stats.added} 筆、更新 ${stats.updated} 筆，已同步儲存至設定位置！`);
+        }, '將暫存審核區資料正式寫入資料庫與儲存檔，請先完成管理員解鎖。');
+    }
+
+    function handleConfirmCommitStaging() {
+        commitStagingUidsToFormalDb([...selectedStagingUids]);
+    }
 
     async function triggerWeeklyUpdate() {
         const modal = document.getElementById('update-log-modal');
@@ -2788,28 +3908,8 @@ function initFooyinAwardsApp() {
             `[2/3] 正在連線掃描『學校公開網頁』(${schoolCount} 個公開站台)...\n` +
             `[3/3] 正在連線掃描『系上公開網頁』(${deptCount} 個學系榮譽榜)...\n`;
 
-        try {
-            const resp = await fetch('/api/trigger-weekly-update', {
-                method: 'POST',
-                headers: authHeaders({ 'Content-Type': 'application/json' })
-            });
-            if (resp.ok) {
-                const res = await resp.json();
-                term.textContent += `\n[自動更新成功] 完成時間: ${res.update_time}\n` +
-                    `- 擷取檢視筆數: ${res.crawled_total} 筆\n` +
-                    `- 新增入庫筆數: ${res.new_added} 筆\n` +
-                    `- 欄位同步更新: ${res.updated_count || 0} 筆\n` +
-                    `- 過濾重複紀錄: ${res.skipped_duplicates} 筆\n` +
-                    `- 目前資料庫總數: ${res.current_total_records} 筆。`;
-                await fetchAwardsData();
-                applyFilters();
-                return;
-            }
-        } catch (_) {}
-
-        // 若處於純靜態 GitHub Pages 模式：支援讀取公開 Google Sheet CSV + 內建三大來源最新差分同步
         let sheetRows = [];
-        const gsheetCsvUrl = (sourcesConfigState.cloud_drive_sources && sourcesConfigState.cloud_drive_sources[0] && sourcesConfigState.cloud_drive_sources[0].sheet_csv_url) || '';
+        const gsheetCsvUrl = (sourcesConfigState.cloud_drive_sources && sourcesConfigState.cloud_drive_sources[0] && sourcesConfigState.cloud_drive_sources[0].sheet_csv_url) || storagePrefs.auto_cloud_url || '';
         if (gsheetCsvUrl && /^https:\/\//i.test(gsheetCsvUrl)) {
             try {
                 const sResp = await fetch(gsheetCsvUrl);
@@ -2818,8 +3918,8 @@ function initFooyinAwardsApp() {
                     sheetRows = parseCSVorJSON(csvTxt, '個人雲端硬碟/行政會議檔案夾');
                     term.textContent += `[雲端試算表同步] 成功讀取 ${sheetRows.length} 筆雲端紀錄！\n`;
                 }
-            } catch (e) {
-                term.textContent += `[提示] 雲端試算表連線受瀏覽器 CORS 限制，改由 GitHub Actions 每週一排程自動抓取。\n`;
+            } catch (_) {
+                term.textContent += `[提示] 雲端試算表連線受瀏覽器 CORS 限制，可綁定雲端硬碟桌面資料夾同步。\n`;
             }
         }
 
@@ -2828,12 +3928,16 @@ function initFooyinAwardsApp() {
             ...VERIFIED_EPO_PUBLIC_RECORDS.map(r => ({ ...r }))
         ];
 
-        const stats = upsertRecordsIntoMemory(latestLookupSamples, '每週三大來源自動LOOK更新');
-        syncEffectiveRecords();
-        applyFilters();
-        term.textContent += `\n[三大來源 LOOK 同步完成]\n` +
-            `- 新增入庫: ${stats.added} 筆 | 同步更新: ${stats.updated} 筆 | 略過重複: ${stats.skipped} 筆\n` +
-            `- GitHub Actions 每週一 08:00 自動排程 (.github/workflows/weekly_update.yml) 已就緒！`;
+        const stgRes = enqueueRecordsToStaging(latestLookupSamples, '網路LOOK掃描', false);
+        term.textContent += `\n[三大來源 LOOK 掃描完成 — 已送入暫存審核區]\n` +
+            `- 新發現並送入暫存區待確認: ${stgRes.added} 筆\n` +
+            `- 與正式庫完全相符略過: ${stgRes.skippedExact} 筆 | 已在暫存區: ${stgRes.skippedDup} 筆\n` +
+            `👉 請點選上方「暫存審核區 (${stagingRecords.length})」檢視確認後寫入正式資料庫！`;
+        if (stgRes.added > 0) {
+            showToast(`網路 LOOK 掃描發現 ${stgRes.added} 筆新/補充資料，已送入「暫存審核區」待確認！`);
+        } else {
+            showToast('網路 LOOK 掃描完成，目前無新增差異（或已在暫存審核區中）。');
+        }
     }
 
     async function triggerBatchNotify() {
@@ -2857,16 +3961,17 @@ function initFooyinAwardsApp() {
                 if (r["發放與領獎狀態"] === "待通知") {
                     r["發放與領獎狀態"] = "通知已發送";
                     r["通知時間"] = todayStr;
+                    persistStaticEditedPatch(r);
                 }
             });
             syncEffectiveRecords();
+            await saveMasterDatabaseSnapshot(true);
             applyFilters();
             alert(`已成功批量派發 ${pendingList.length} 封學生領獎與獎助金通知信！`);
         }
     }
 
     async function handleAddAwardRecord() {
-        const nextId = Math.max(0, ...basePublicRecords.map(r => Number(r["編號"] || 0))) + 1;
         const yearVal = document.getElementById('add-year').value;
         const deptVal = document.getElementById('add-dept').value.trim() || '護理系';
         const deptCodeVal = resolveDeptCode(deptVal, document.getElementById('add-dept-code').value.trim());
@@ -2880,9 +3985,13 @@ function initFooyinAwardsApp() {
         const amtVal = Number(document.getElementById('add-amount').value || 0);
         const levelVal = classifyCompetitionLevel(catVal, evVal, wkVal, orgInput);
 
+        if (!evVal) {
+            alert('請填寫「活動名稱」！');
+            return;
+        }
+
         const rawNewRecord = normalizeAwardRecord({
-            "識別號": String(nextId),
-            "編號": nextId,
+            "識別號": "",
             "學年度": yearVal,
             "學期": document.getElementById('add-term').value || '上',
             "會議記錄時間": meetDateInput,
@@ -2915,32 +4024,17 @@ function initFooyinAwardsApp() {
             "領獎截止日期": "",
             "原畢業學校": document.getElementById('add-school').value.trim() || '無',
             "佐證連結": document.getElementById('add-url').value.trim() || '無',
-            "備註": "手動新增之獲獎紀錄",
+            "備註": "自行建檔新增之獲獎紀錄",
             "資料來源": srcInput
-        });
+        }, true);
 
-        try {
-            await fetch('/api/add-award', {
-                method: 'POST',
-                headers: authHeaders({ 'Content-Type': 'application/json' }),
-                body: JSON.stringify(rawNewRecord)
-            });
-        } catch (_) {}
-
-        const idKey = String(rawNewRecord["編號"]);
-        sessionFullRecordsMap[idKey] = {
-            "獲獎學生": rawNewRecord["獲獎學生"],
-            "學生學號": rawNewRecord["學生學號"],
-            "學制班級": rawNewRecord["學制班級"],
-            "原畢業學校": rawNewRecord["原畢業學校"],
-            "佐證連結": rawNewRecord["佐證連結"]
-        };
-        clearStaticRecordDeleted(rawNewRecord);
-        basePublicRecords.unshift(deidentifyRecord(rawNewRecord));
-        syncEffectiveRecords();
-        applyFilters();
         document.getElementById('add-modal').classList.remove('show');
-        alert(`成功新增獲獎紀錄: [${rawNewRecord["學年度"]}${rawNewRecord["學期"]}] ${rawNewRecord["獲獎學生"]} - ${rawNewRecord["榮譽獎項"]}`);
+        const stgRes = enqueueRecordsToStaging([rawNewRecord], '自行建檔新增', true);
+        if (stgRes.added > 0) {
+            showToast(`已將新建紀錄「${evVal}」送入暫存審核區，請確認無誤後寫入正式資料庫！`);
+        } else {
+            showToast('此筆紀錄與現有正式庫或暫存區重複，已略過。', true);
+        }
     }
 
     // =========================================================
@@ -3151,6 +4245,7 @@ function initFooyinAwardsApp() {
                             sessionFullRecordsMap[recNumKey][pf] = rec[pf];
                             piiChanged = true;
                         }
+                        targetPub[pf] = rec[pf];
                     }
                 });
 
@@ -3223,29 +4318,11 @@ function initFooyinAwardsApp() {
             }
         }
 
-        try {
-            const resp = await fetch('/api/import-awards', {
-                method: 'POST',
-                headers: authHeaders({ 'Content-Type': 'application/json' }),
-                body: JSON.stringify({ records: allMapped })
-            });
-            if (resp.ok) {
-                const res = await resp.json();
-                await fetchAwardsData();
-                applyFilters();
-                const summary = `成功掃描 ${supportedFiles.length} 個檔案！新增 ${res.added_count} 筆、同步更新 ${res.updated_count || 0} 筆（略過重複 ${res.skipped_count} 筆）。`;
-                if (isFromLookupModal && term) term.textContent += `\n[完成] ${summary}`;
-                if (msgBox) { msgBox.style.color = '#10B981'; msgBox.textContent = summary; }
-                return;
-            }
-        } catch (_) {}
-
-        const stats = upsertRecordsIntoMemory(allMapped, '個人雲端硬碟/行政會議檔案夾');
-        syncEffectiveRecords();
-        applyFilters();
-        const summary = `成功掃描 ${supportedFiles.length} 個檔案！新增 ${stats.added} 筆、同步更新 ${stats.updated} 筆（略過無異動 ${stats.skipped} 筆）。`;
-        if (isFromLookupModal && term) term.textContent += `\n[完成] ${summary}`;
-        if (msgBox) { msgBox.style.color = '#10B981'; msgBox.textContent = summary; }
+        const stgRes = enqueueRecordsToStaging(allMapped, '資料夾批次匯入', !isFromLookupModal);
+        const summary = `已掃描 ${supportedFiles.length} 個檔案！共 ${stgRes.added} 筆新/異動紀錄送入「暫存審核區」（略過與正式庫完全相同 ${stgRes.skippedExact} 筆、已在暫存區 ${stgRes.skippedDup} 筆）。請確認無誤後寫入正式資料庫！`;
+        if (isFromLookupModal && term) term.textContent += `\n[已送暫存審核區] ${summary}`;
+        if (msgBox) { msgBox.style.color = '#0D9488'; msgBox.textContent = summary; }
+        showToast(`資料夾掃描完成：${stgRes.added} 筆紀錄已送入暫存審核區！`);
     }
 
     async function handleImportData() {
@@ -3257,18 +4334,22 @@ function initFooyinAwardsApp() {
         if (folderInput && folderInput.files && folderInput.files.length > 0) {
             await importBatchFilesFromFolder(folderInput.files, false);
             folderInput.value = '';
-            setTimeout(() => document.getElementById('import-modal').classList.remove('show'), 1400);
+            document.getElementById('import-modal').classList.remove('show');
             return;
         }
 
         let recordsToImport = [];
+        let importLabel = '檔案匯入';
 
         if (fileInput.files && fileInput.files.length > 0) {
+            const names = [...fileInput.files].map(f => f.name).join(', ');
+            importLabel = `檔案匯入 (${names})`;
             for (const f of fileInput.files) {
                 const parsedRows = await parseSingleImportFile(f);
                 recordsToImport = recordsToImport.concat(parsedRows);
             }
         } else if (textInput) {
+            importLabel = '剪貼簿貼上匯入';
             recordsToImport = parseCSVorJSON(textInput, '手動貼上匯入');
         } else {
             alert("請選擇匯出的 .xlsx / .xls / .csv / .json 檔案、選取資料夾，或貼上資料內容！");
@@ -3281,36 +4362,20 @@ function initFooyinAwardsApp() {
             return;
         }
 
-        msgBox.style.color = '#2563EB';
-        msgBox.textContent = `已解析 ${recordsToImport.length} 筆紀錄，正在進行雙向對稱匯入與欄位更新...`;
-
-        try {
-            const resp = await fetch('/api/import-awards', {
-                method: 'POST',
-                headers: authHeaders({ 'Content-Type': 'application/json' }),
-                body: JSON.stringify({ records: recordsToImport })
-            });
-            if (resp.ok) {
-                const res = await resp.json();
-                msgBox.style.color = '#10B981';
-                msgBox.textContent = `匯入成功！新增 ${res.added_count} 筆、同步更新 ${res.updated_count || 0} 筆（略過無異動 ${res.skipped_count} 筆）。`;
-                fileInput.value = '';
-                document.getElementById('import-text-input').value = '';
-                await fetchAwardsData();
-                applyFilters();
-                setTimeout(() => document.getElementById('import-modal').classList.remove('show'), 1500);
-                return;
-            }
-        } catch (_) {}
-
-        const stats = upsertRecordsIntoMemory(recordsToImport);
-        syncEffectiveRecords();
-        msgBox.style.color = '#10B981';
-        msgBox.textContent = `匯入完成！新增 ${stats.added} 筆、同步更新 ${stats.updated} 筆（略過無異動 ${stats.skipped} 筆）。`;
+        const stgRes = enqueueRecordsToStaging(recordsToImport, importLabel, false);
         fileInput.value = '';
         document.getElementById('import-text-input').value = '';
-        applyFilters();
-        setTimeout(() => document.getElementById('import-modal').classList.remove('show'), 1500);
+
+        if (stgRes.added > 0) {
+            msgBox.style.color = '#0D9488';
+            msgBox.textContent = `已解析並將 ${stgRes.added} 筆新/異動資料送入「暫存審核區」（略過無異動 ${stgRes.skippedExact} 筆）！`;
+            document.getElementById('import-modal').classList.remove('show');
+            openStagingModal();
+            showToast(`已將 ${stgRes.added} 筆匯入資料送入「暫存審核區」，確認無誤後即可寫入正式資料庫！`);
+        } else {
+            msgBox.style.color = '#D97706';
+            msgBox.textContent = `解析 ${recordsToImport.length} 筆紀錄，均與現有正式資料庫或暫存區相同（略過無異動 ${stgRes.skippedExact} 筆、已在暫存 ${stgRes.skippedDup} 筆）。`;
+        }
     }
 
     function parseRFC4180Delimited(text, delimiter = ',') {
@@ -3528,12 +4593,13 @@ function initFooyinAwardsApp() {
         downloadRowsAsExcel(rows, filename, "data_table4_8_1");
     }
 
-    function downloadSampleImportTemplate(isFullManagementFormat = true) {
+    function downloadSampleImportTemplate(isFullManagementFormat = true, targetYearNum = '115') {
+        const cleanYr = String(targetYearNum || '115').replace(/學年度/g, '').trim() || '115';
         const sampleBase = {
             "識別號": "",
-            "學年度": "115",
+            "學年度": cleanYr,
             "學期": "上",
-            "會議記錄時間": "2026-08-06",
+            "會議記錄時間": `${Number(cleanYr) + 1911}-08-06`,
             "活動類別": "國際(外)",
             "活動主辦單位": "World Beauty Art Association (WBAA)",
             "活動名稱": "WBAA第25屆世界美容藝術與設計國際大賽",
@@ -3543,8 +4609,8 @@ function initFooyinAwardsApp() {
             "人數(女)": "1",
             "是否獲獎": "是",
             "獲獎名次": "金牌",
-            "活動起始日期": "2026/08/01",
-            "活動結束日期": "2026/08/06",
+            "活動起始日期": `${Number(cleanYr) + 1911}/08/01`,
+            "活動結束日期": `${Number(cleanYr) + 1911}/08/06`,
             "學生所屬系科 - 系所代碼": "健康美容系 - 3839",
             "競賽項目是否與就讀科系相關": "是",
             "所屬學院": "醫學與健康學院",
@@ -3561,22 +4627,23 @@ function initFooyinAwardsApp() {
             "領獎截止日期": "",
             "原畢業學校": "無",
             "佐證連結": "https://epo.fy.edu.tw/p/406-1058-76437,r1306.php?Lang=zh-tw",
-            "備註": "範例格式列（識別號留空代表新增；填寫既有識別號則同步更新該筆紀錄；未記錄欄位請填『無』）",
-            "資料來源": "學校公開網頁 (輔英新聞)"
+            "備註": "範例格式列（識別號留空代表新增；填寫既有識別號則同步更新該筆紀錄；匯入後會先進暫存審核區）",
+            "資料來源": `${cleanYr}學年度填報資料`
         };
         if (isFullManagementFormat) {
             const row = convertToStandardExportRow(sampleBase, false);
             row["識別號"] = "";
-            downloadRowsAsExcel([row], "輔英獲獎系統_完整管理匯入模版.xlsx", "輔英獲獎管理清冊");
+            downloadRowsAsExcel([row], `輔英獲獎系統_${cleanYr}學年度完整管理匯入模版.xlsx`, "輔英獲獎管理清冊");
         } else {
             const row = convertTo112_114OnlyRow(sampleBase);
             row["識別號"] = "";
-            downloadRowsAsExcel([row], "輔英獲獎系統_112-114填報匯入模版.xlsx", "data_table4_8_1");
+            downloadRowsAsExcel([row], `輔英獲獎系統_${cleanYr}學年度填報匯入模版.xlsx`, "data_table4_8_1");
         }
     }
 
-    function exportDataToJSON(filename, forceMask = true) {
-        const exportList = filteredRecords.map(r => convertToStandardExportRow(r, forceMask));
+    function exportDataToJSON(filename, forceMask = true, customSourceList = null) {
+        const srcList = Array.isArray(customSourceList) ? customSourceList : filteredRecords;
+        const exportList = srcList.map(r => convertToStandardExportRow(r, forceMask));
         const blob = new Blob([JSON.stringify(exportList, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -3586,80 +4653,223 @@ function initFooyinAwardsApp() {
         URL.revokeObjectURL(url);
     }
 
+    // =========================================================
+    // 自選學年度 (112 ~ 120) 匯出模版與報表選擇引擎
+    // =========================================================
+    function extractAcadYearInt(recYear) {
+        const m = String(recYear || '').match(/(1[12]\d)/);
+        return m ? Number(m[1]) : 0;
+    }
+
+    function getCustomExportSelectionState() {
+        const modeEl = document.getElementById('export-year-mode');
+        const singleEl = document.getElementById('export-single-year');
+        const startEl = document.getElementById('export-range-start');
+        const endEl = document.getElementById('export-range-end');
+        const semEl = document.getElementById('export-semester-filter');
+        const fmtEl = document.getElementById('export-format-type');
+        const usePageChk = document.getElementById('export-opt-use-page-filter');
+
+        const mode = modeEl ? modeEl.value : 'all';
+        const singleYr = Number(singleEl ? singleEl.value : 115) || 115;
+        let startYr = Number(startEl ? startEl.value : 112) || 112;
+        let endYr = Number(endEl ? endEl.value : 115) || 115;
+        if (startYr > endYr) {
+            const tmp = startYr;
+            startYr = endYr;
+            endYr = tmp;
+        }
+        const sem = semEl ? semEl.value : '';
+        const fmt = fmtEl ? fmtEl.value : 'template-xlsx';
+        const usePageFilter = Boolean(usePageChk && usePageChk.checked);
+
+        let yearLabel = '112-120學年度';
+        if (mode === 'single') yearLabel = `${singleYr}學年度`;
+        else if (mode === 'range') yearLabel = startYr === endYr ? `${startYr}學年度` : `${startYr}-${endYr}學年度`;
+
+        const semLabel = sem ? `${sem}學期` : '全部學期';
+        return { mode, singleYr, startYr, endYr, sem, fmt, usePageFilter, yearLabel, semLabel };
+    }
+
+    function getRecordsForCustomExport() {
+        const st = getCustomExportSelectionState();
+        const pool = st.usePageFilter ? filteredRecords : allRecords;
+        return pool.filter(r => {
+            const y = extractAcadYearInt(r["學年度"]);
+            if (st.mode === 'single') {
+                if (y !== st.singleYr) return false;
+            } else if (st.mode === 'range') {
+                if (y < st.startYr || y > st.endYr) return false;
+            } else {
+                if (y < 112 || y > 120) return false;
+            }
+            if (st.sem && String(r["學期"] || '') !== st.sem) return false;
+            return true;
+        });
+    }
+
+    function updateExportOptionsUI() {
+        const st = getCustomExportSelectionState();
+        const singleGrp = document.getElementById('export-single-year-group');
+        const startGrp = document.getElementById('export-range-start-group');
+        const endGrp = document.getElementById('export-range-end-group');
+        const prevLbl = document.getElementById('export-preview-label');
+        const prevCnt = document.getElementById('export-preview-count');
+
+        if (singleGrp) singleGrp.style.display = st.mode === 'single' ? 'flex' : 'none';
+        if (startGrp) startGrp.style.display = st.mode === 'range' ? 'flex' : 'none';
+        if (endGrp) endGrp.style.display = st.mode === 'range' ? 'flex' : 'none';
+
+        const matched = getRecordsForCustomExport();
+        if (prevLbl) prevLbl.textContent = `${st.yearLabel}（${st.semLabel}${st.usePageFilter ? '，含畫面篩選' : ''}）`;
+        if (prevCnt) {
+            prevCnt.textContent = st.fmt === 'blank-template-xlsx'
+                ? '產生空白範例模版 1 列'
+                : `共 ${matched.length} 筆紀錄`;
+        }
+    }
+
+    function openExportOptionsModal(defaultFormat = 'template-xlsx') {
+        const fmtEl = document.getElementById('export-format-type');
+        if (fmtEl && defaultFormat) fmtEl.value = defaultFormat;
+
+        // 若主畫面已選特定學年度，智慧同步預設值
+        const activeFilterYr = filterYear && filterYear.value ? extractAcadYearInt(filterYear.value) : 0;
+        const modeEl = document.getElementById('export-year-mode');
+        const singleEl = document.getElementById('export-single-year');
+        if (activeFilterYr >= 112 && activeFilterYr <= 120 && modeEl && singleEl) {
+            modeEl.value = 'single';
+            singleEl.value = String(activeFilterYr);
+        }
+
+        updateExportOptionsUI();
+        const modal = document.getElementById('export-options-modal');
+        if (modal) modal.classList.add('show');
+    }
+
+    function executeCustomYearExport() {
+        const st = getCustomExportSelectionState();
+        const semSuffix = st.sem ? `_${st.sem}學期` : '';
+        const filePrefix = `${st.yearLabel}${semSuffix}`;
+
+        if (st.fmt === 'blank-template-xlsx') {
+            const sampleYr = st.mode === 'single' ? String(st.singleYr) : (st.mode === 'range' ? String(st.endYr) : '115');
+            downloadSampleImportTemplate(false, sampleYr);
+            document.getElementById('export-options-modal').classList.remove('show');
+            showToast(`已下載 ${sampleYr}學年度 填報空白/範例匯入模版 (.xlsx)！`);
+            return;
+        }
+
+        const targetRecords = getRecordsForCustomExport();
+        if (targetRecords.length === 0) {
+            alert(`所選範圍「${st.yearLabel}（${st.semLabel}）」目前尚無獲獎紀錄可匯出！\n若您需要該學年度的空白填報格式，請將匯出格式選為「下載所選學年度空白/範例匯入模版 (.xlsx)」。`);
+            return;
+        }
+
+        const runExport = (forceMask) => {
+            if (st.fmt === 'template-xlsx') {
+                const rows = targetRecords.map(r => convertTo112_114OnlyRow(r));
+                downloadRowsAsExcel(rows, `${filePrefix}填報資料_匯出.xlsx`, 'data_table4_8_1');
+            } else if (st.fmt === 'template-csv') {
+                const rows = targetRecords.map(r => convertTo112_114OnlyRow(r));
+                downloadRowsAsCSV(rows, `${filePrefix}填報資料_匯出.csv`);
+            } else if (st.fmt === 'public-xlsx' || st.fmt === 'admin-xlsx') {
+                const rows = targetRecords.map(r => convertToStandardExportRow(r, forceMask));
+                const tag = forceMask ? '公開去識別化清冊' : '完整管理清冊';
+                downloadRowsAsExcel(rows, `輔英科技大學_${filePrefix}_${tag}.xlsx`, '輔英獲獎管理清冊');
+            } else if (st.fmt === 'public-csv' || st.fmt === 'admin-csv') {
+                const rows = targetRecords.map(r => convertToStandardExportRow(r, forceMask));
+                const tag = forceMask ? '公開去識別化清冊' : '完整管理清冊';
+                downloadRowsAsCSV(rows, `輔英科技大學_${filePrefix}_${tag}.csv`);
+            } else if (st.fmt === 'json') {
+                exportDataToJSON(`fooyin_awards_${filePrefix}.json`, forceMask, targetRecords);
+            }
+            document.getElementById('export-options-modal').classList.remove('show');
+            showToast(`已成功匯出「${filePrefix}」共 ${targetRecords.length} 筆紀錄！`);
+        };
+
+        if (st.fmt === 'admin-xlsx' || st.fmt === 'admin-csv') {
+            requireAdminUnlock(() => runExport(false), '匯出含完整學生姓名與學號之管理清冊需先驗證管理員密碼。');
+        } else if (st.fmt === 'json') {
+            runExport(!isAdminUnlocked);
+        } else {
+            runExport(true);
+        }
+    }
+
     // ==========================================
-    // 差別比對中心 (會議/官網抓取 vs 112-114填報模版)
+    // 差別比對中心 (會議/官網抓取 vs 現有填報資料庫 實證交叉比對)
     // ==========================================
     let currentDiffData = null;
 
-    async function openDiffModal() {
-        const modal = document.getElementById('diff-modal');
-        const tbody = document.getElementById('diff-table-body');
-        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding: 20px;">載入會議公告與 112-114 差別比對資料中...</td></tr>`;
-        modal.classList.add('show');
-
-        try {
-            const resp = await fetch('/api/diff-analysis', { headers: authHeaders() });
-            if (resp.ok) {
-                currentDiffData = await resp.json();
-                renderDiffModalData();
-                return;
-            }
-        } catch (_) {}
-
+    function refreshClientDiffSummary() {
         const fmtName = (n) => isAdminUnlocked ? n : maskStudentNames(n);
         const existingById = {};
         basePublicRecords.forEach(r => {
-            existingById[String(r["識別號"] || '')] = r;
+            const cid = String(r["識別號"] || '').replace(/^#+/, '').trim();
+            if (cid) existingById[cid] = r;
         });
 
         let matchedCount = 0, newCount = 0, fieldDiffCount = 0;
         const diffItems = VERIFIED_EPO_PUBLIC_RECORDS.map(epo => {
-            const inDb = existingById[epo["識別號"]];
+            const lookupId = String(epo.target_update_id || epo["識別號"] || '').replace(/^#+/, '').trim();
+            const inDb = lookupId ? existingById[lookupId] : null;
+            const alreadyStaged = isRecordAlreadyInStaging(epo);
+
             if (inDb) {
+                const dbNum = String(inDb["編號"]);
+                const dbFullStu = (sessionFullRecordsMap[dbNum] && sessionFullRecordsMap[dbNum]["獲獎學生"]) ||
+                    (decryptedPiiMap && decryptedPiiMap[dbNum] && decryptedPiiMap[dbNum]["獲獎學生"]) ||
+                    inDb["獲獎學生"] || '無';
+                const dbHasStudent = dbFullStu && dbFullStu !== '無';
+                const dbHasTeacher = inDb["指導老師"] && inDb["指導老師"] !== '無';
+
+                if (epo.target_update_id && (!dbHasStudent || !dbHasTeacher)) {
+                    fieldDiffCount++;
+                    const relNote = epo.related_table_ids
+                        ? `對應表 4-8-1 識別號 #${epo.related_table_ids}（同賽事五項金牌）`
+                        : `對應表 4-8-1 識別號 #${lookupId}`;
+                    return {
+                        diff_status: "欄位資訊修訂",
+                        already_staged: alreadyStaged,
+                        source: epo["資料來源"],
+                        meeting_date: epo["會議記錄時間"],
+                        student_name: fmtName(epo["獲獎學生"]),
+                        event_name: `${epo["活動名稱"]}｜${epo["競賽項目"]}`,
+                        award_rank: epo["獲獎名次"],
+                        amount: epo["獎助金金額"],
+                        crawled_detail: { ...epo },
+                        explanation: `輔英新聞 (${epo["會議記錄時間"]}) 實證查核：${relNote} 原表未登載姓名與指導老師，採納可補充學生與師長資訊。`
+                    };
+                }
+
                 matchedCount++;
                 return {
                     diff_status: "資料完全相符",
+                    already_staged: false,
                     source: epo["資料來源"],
                     meeting_date: epo["會議記錄時間"],
                     student_name: fmtName(epo["獲獎學生"]),
-                    event_name: epo["活動名稱"],
+                    event_name: `${epo["活動名稱"]}｜${epo["競賽項目"]}`,
                     award_rank: epo["獲獎名次"],
-                    amount: epo["獎助金金額"],
+                    amount: inDb["獎助金金額"] || epo["獎助金金額"],
                     crawled_detail: { ...epo },
-                    explanation: `已收錄於系統資料庫（識別號 #${epo["識別號"]}，${epo["學年度"]} ${epo["學期"]}學期）。`
+                    explanation: `已完整收錄於正式資料庫（識別號 #${lookupId}，${inDb["學年度"]} ${inDb["學期"]}學期）。`
                 };
             }
-            // 比對是否可補充表 4-8-1 同賽事無姓名紀錄
-            const sameEventIn481 = basePublicRecords.find(r =>
-                String(r["活動名稱"] || '').includes('全國技專校院學生實務專題製作競賽') &&
-                epo["活動名稱"].includes('全國技專校院學生實務專題製作競賽') &&
-                r["系所名稱"] === epo["系所名稱"]
-            );
-            if (sameEventIn481) {
-                fieldDiffCount++;
-                return {
-                    diff_status: "欄位資訊修訂",
-                    source: epo["資料來源"],
-                    meeting_date: epo["會議記錄時間"],
-                    student_name: fmtName(epo["獲獎學生"]),
-                    event_name: epo["活動名稱"],
-                    award_rank: epo["獲獎名次"],
-                    amount: epo["獎助金金額"],
-                    crawled_detail: { ...epo },
-                    explanation: `輔英新聞 (${epo["會議記錄時間"]}) 公開表揚資訊，可補充表 4-8-1 同賽事 (#${sameEventIn481["識別號"]}) 未登載之學生與指導教師名單。`
-                };
-            }
+
             newCount++;
             return {
                 diff_status: "新增獲獎公告",
+                already_staged: alreadyStaged,
                 source: epo["資料來源"],
                 meeting_date: epo["會議記錄時間"],
                 student_name: fmtName(epo["獲獎學生"]),
-                event_name: epo["活動名稱"],
+                event_name: `${epo["活動名稱"]}｜${epo["競賽項目"]}`,
                 award_rank: epo["獲獎名次"],
                 amount: epo["獎助金金額"],
                 crawled_detail: { ...epo },
-                explanation: `自【${epo["資料來源"]}】(${epo["會議記錄時間"]}，${epo["學年度"]}${epo["學期"]}學期) 查證之公開新榮譽，尚未列於 112-114 填報表。`
+                explanation: `自【${epo["資料來源"]}】(${epo["會議記錄時間"]}，${epo["學年度"]}${epo["學期"]}學期) 實證查核之公開新榮譽（表 4-8-1 5月結算後新增賽事）。`
             };
         });
 
@@ -3670,6 +4880,15 @@ function initFooyinAwardsApp() {
             field_diff_count: fieldDiffCount,
             diff_items: diffItems
         };
+    }
+
+    async function openDiffModal() {
+        const modal = document.getElementById('diff-modal');
+        const tbody = document.getElementById('diff-table-body');
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding: 20px;">載入會議公告與現有資料庫交叉比對結果中...</td></tr>`;
+        modal.classList.add('show');
+
+        refreshClientDiffSummary();
         renderDiffModalData();
     }
 
@@ -3690,37 +4909,53 @@ function initFooyinAwardsApp() {
             if (item.diff_status === '欄位資訊修訂') badgeClass = 'badge-warning';
             if (item.diff_status === '資料完全相符') badgeClass = 'badge-success';
 
+            let actionHtml = `<span class="text-muted"><i class="fa-solid fa-check"></i> 已在庫</span>`;
+            if (item.diff_status !== '資料完全相符') {
+                if (item.already_staged) {
+                    actionHtml = `
+                        <button type="button" class="btn btn-secondary btn-sm btn-open-stg-from-diff" style="color:#0F766E; border-color:#5EEAD4; background:#F0FDFA;">
+                            <i class="fa-solid fa-clipboard-check"></i> 已在暫存區 (點此審核)
+                        </button>
+                    `;
+                } else {
+                    actionHtml = `
+                        <button type="button" class="btn btn-primary btn-sm btn-adopt-diff" data-idx="${idx}">
+                            <i class="fa-solid fa-plus"></i> 採納送暫存
+                        </button>
+                    `;
+                }
+            }
+
             tr.innerHTML = `
                 <td><span class="badge ${badgeClass}">${escapeHtml(item.diff_status)}</span></td>
-                <td><small class="text-muted">${escapeHtml(item.source)}</small></td>
+                <td><small class="text-muted">${escapeHtml(item.source)}<br>${escapeHtml(item.meeting_date || '')}</small></td>
                 <td><strong>${escapeHtml(item.student_name)}</strong></td>
                 <td><strong>${escapeHtml(item.event_name)}</strong><br><small class="text-gold">${escapeHtml(item.award_rank)} (NT$ ${(Number(item.amount) || 0).toLocaleString()})</small></td>
                 <td><small style="color:#64748B;">${escapeHtml(item.explanation)}</small></td>
-                <td>
-                    ${item.diff_status !== '資料完全相符' ? `
-                        <button class="btn btn-primary btn-sm btn-adopt-diff" data-idx="${idx}">
-                            <i class="fa-solid fa-plus"></i> 採納併入
-                        </button>
-                    ` : `<span class="text-muted"><i class="fa-solid fa-check"></i> 已在庫</span>`}
-                </td>
+                <td>${actionHtml}</td>
             `;
             tbody.appendChild(tr);
         });
 
-        document.querySelectorAll('.btn-adopt-diff').forEach(btn => {
+        tbody.querySelectorAll('.btn-adopt-diff').forEach(btn => {
             btn.addEventListener('click', (e) => {
-                const idx = e.currentTarget.dataset.idx;
+                const idx = Number(e.currentTarget.dataset.idx);
                 const target = currentDiffData.diff_items[idx];
-                requireAdminUnlock(() => adoptDiffItem(target), '採納會議榮譽併入系統請先完成管理員解鎖。');
+                if (target) adoptDiffItem(target, false);
+            });
+        });
+        tbody.querySelectorAll('.btn-open-stg-from-diff').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.getElementById('diff-modal').classList.remove('show');
+                openStagingModal();
             });
         });
     }
 
-    function adoptDiffItem(item) {
-        const nextId = Math.max(0, ...basePublicRecords.map(r => Number(r["編號"] || 0))) + 1;
-        const rawRec = normalizeAwardRecord(item.crawled_detail || {
-            "識別號": String(nextId),
-            "編號": nextId,
+    function adoptDiffItem(item, silentBatch = false) {
+        if (!item) return 0;
+        const rawRec = item.crawled_detail ? { ...item.crawled_detail } : {
+            "識別號": "",
             "會議記錄時間": item.meeting_date || "",
             "活動主辦單位": "無",
             "資料來源": item.source || "學校公開網頁 (輔英新聞)",
@@ -3739,39 +4974,45 @@ function initFooyinAwardsApp() {
             "榮譽獎項": item.award_rank || "獲獎",
             "獎助金金額": Number(item.amount || 0),
             "發放與領獎狀態": Number(item.amount || 0) > 0 ? "待通知" : "尚待核定",
-            "通知時間": "",
-            "領獎截止日期": "",
             "原畢業學校": "無",
             "佐證連結": "https://epo.fy.edu.tw/",
-            "備註": "自公開新聞/會議紀錄查核採納併入資料庫"
-        });
-        rawRec["編號"] = nextId;
-
-        sessionFullRecordsMap[String(nextId)] = {
-            "獲獎學生": rawRec["獲獎學生"],
-            "學生學號": rawRec["學生學號"],
-            "學制班級": rawRec["學制班級"],
-            "原畢業學校": rawRec["原畢業學校"],
-            "佐證連結": rawRec["佐證連結"]
+            "備註": "自公開新聞/會議紀錄查核採納"
         };
-        clearStaticRecordDeleted(rawRec);
-        basePublicRecords.unshift(deidentifyRecord(rawRec));
-        syncEffectiveRecords();
-        applyFilters();
-        alert(`成功將最新會議榮譽 [${rawRec["學年度"]}${rawRec["學期"]} - ${item.event_name}] 採納併入資料庫！`);
+
+        const res = enqueueRecordsToStaging([rawRec], '比對中心採納', false);
+        refreshClientDiffSummary();
+        renderDiffModalData();
+        if (!silentBatch) {
+            if (res.added > 0) {
+                showToast(`已將「${rawRec["活動名稱"]}」送入暫存審核區！可繼續採納或點「開啟暫存審核區」確認入庫。`);
+            } else {
+                showToast('此項目已在暫存審核區或正式資料庫中！');
+            }
+        }
+        return res.added;
     }
 
     function handleMergeAllDiff() {
-        if (!currentDiffData) return;
-        const newItems = currentDiffData.diff_items.filter(i => i.diff_status !== '資料完全相符');
-        if (newItems.length === 0) {
-            alert("目前沒有需要採納的新增會議榮譽！");
+        if (!currentDiffData) refreshClientDiffSummary();
+        const pendingItems = (currentDiffData ? currentDiffData.diff_items : []).filter(i => i.diff_status !== '資料完全相符' && !i.already_staged);
+        if (pendingItems.length === 0) {
+            if (stagingRecords.length > 0) {
+                document.getElementById('diff-modal').classList.remove('show');
+                openStagingModal();
+                showToast('差異項目皆已送入暫存審核區，請檢視確認後寫入正式資料庫！');
+            } else {
+                showToast('目前所有公告皆與正式資料庫完全相符，無須重複採納！');
+            }
             return;
         }
 
-        newItems.forEach(item => adoptDiffItem(item));
+        let totalAdded = 0;
+        pendingItems.forEach(item => {
+            totalAdded += adoptDiffItem(item, true);
+        });
         document.getElementById('diff-modal').classList.remove('show');
-        alert(`已成功將 ${newItems.length} 筆最新會議榮譽批量併入資料庫！`);
+        openStagingModal();
+        showToast(`已將 ${totalAdded} 筆差異項目送入「暫存審核區」，請檢視確認後按確認寫入正式資料庫！`);
     }
 
     // ==========================================

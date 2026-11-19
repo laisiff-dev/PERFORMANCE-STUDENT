@@ -57,6 +57,14 @@ class FooyinAPIHandler(SimpleHTTPRequestHandler):
             self.send_json_response(mgr.generate_ir_report())
         elif path == "/api/sources-status":
             self.send_json_response(updater.inspect_sources_status())
+        elif path == "/api/storage-config":
+            cfg = updater.config.get("storage", {})
+            self.send_json_response({
+                "status": "success",
+                "active_db_path": mgr.data_path,
+                "storage_config": cfg,
+                "total_records": len(mgr.records),
+            })
         elif path == "/api/diff-analysis":
             self.send_json_response(updater.get_diff_analysis_with_template(public_mode=not is_admin))
         elif path == "/api/unapplied-students":
@@ -117,6 +125,30 @@ class FooyinAPIHandler(SimpleHTTPRequestHandler):
             updater.reload_config()
             build_secure_data_js(passphrase=admin_passphrase)
             self.send_json_response({"status": "success", "config": updater.inspect_sources_status()})
+        elif path == "/api/storage-config":
+            custom_dir = str(payload.get("custom_storage_dir", "") or "").strip()
+            auto_load = bool(payload.get("auto_load_on_startup", True))
+            updater.reload_config()
+            updater.config["storage"] = {
+                "custom_storage_dir": custom_dir,
+                "auto_load_on_startup": auto_load,
+            }
+            if custom_dir:
+                os.makedirs(custom_dir, exist_ok=True)
+                target_json = os.path.join(custom_dir, "fooyin_student_awards_standardized.json")
+                if auto_load and os.path.exists(target_json):
+                    mgr.data_path = target_json
+                    mgr.records = mgr.load_data()
+                else:
+                    mgr.data_path = target_json
+                    mgr.save_data()
+            save_sources_config(updater.config)
+            build_secure_data_js(passphrase=admin_passphrase)
+            self.send_json_response({
+                "status": "success",
+                "active_db_path": mgr.data_path,
+                "total_records": len(mgr.records),
+            })
         elif path == "/api/dispatch-notification":
             record_id = payload.get("record_id")
             if record_id:
@@ -272,6 +304,14 @@ def run_server():
     admin_passphrase = args.passphrase
     mgr = FooyinAwardsManager()
     updater = FooyinWeeklyUpdater(mgr)
+    storage_cfg = updater.config.get("storage", {})
+    custom_dir = str(storage_cfg.get("custom_storage_dir", "") or "").strip()
+    if custom_dir and storage_cfg.get("auto_load_on_startup", True):
+        candidate_json = os.path.join(custom_dir, "fooyin_student_awards_standardized.json")
+        if os.path.exists(candidate_json):
+            mgr.data_path = candidate_json
+            mgr.records = mgr.load_data()
+            print(f"[自動載入] 已從設定之電腦/雲端儲存路徑載入最新資料庫: {candidate_json} ({len(mgr.records)} 筆)")
     notifier = StudentNotificationService(mgr)
 
     server = HTTPServer((args.host, args.port), FooyinAPIHandler)
